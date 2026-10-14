@@ -1,0 +1,42 @@
+# Every push (any branch) publishes the game to GitHub Pages, so the newest
+# change made in a Claude Code cloud session is playable right away.
+name: Oyunu yayinla
+
+on:
+  push:
+    branches: ['**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Sozdizimi kontrolu
+        run: python3 tools/check.py
+      - name: Siteyi hazirla
+        run: |
+          mkdir -p _site
+          cp -r index.html models _site/
+          echo "{\"sha\":\"$GITHUB_SHA\",\"branch\":\"$GITHUB_REF_NAME\",\"time\":\"$(TZ=Europe/Istanbul date +'%d.%m %H:%M')\"}" > _site/version.json
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deploy
+        uses: actions/deploy-pages@v4

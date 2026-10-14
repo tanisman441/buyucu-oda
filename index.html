@@ -28,6 +28,7 @@
   #cross.hot::before{background:#f5c76a}
   #cross.hold::after{border-style:dashed;animation:spin 1.6s linear infinite}
   @keyframes spin{to{transform:rotate(360deg)}}
+  #ver{position:fixed;right:12px;bottom:8px;font:600 11px Nunito,sans-serif;color:rgba(244,239,228,.45);pointer-events:none;text-shadow:0 1px 3px rgba(0,0,0,.6)}
   #toast{position:fixed;top:42%;left:50%;transform:translate(-50%,-50%);font-family:'Cormorant Garamond',serif;font-size:34px;color:#fff6e2;text-shadow:0 2px 18px rgba(0,0,0,.6);opacity:0;transition:opacity .6s;pointer-events:none;text-align:center}
   #start{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:radial-gradient(ellipse at center,rgba(20,12,6,.35),rgba(5,3,2,.85));color:#f4efe4;cursor:pointer;transition:opacity .6s}
   #start h1{font-family:'Cormorant Garamond',serif;font-weight:500;font-size:64px;margin:0;letter-spacing:1px}
@@ -52,6 +53,7 @@
 <div id="goals"><h3>Bölüm hedefleri</h3><div id="g0">Masadaki asanı al</div><div id="g1">Lumos! Asanı yak</div><div id="g2">Pencereden dışarı bak</div><div id="g3">Bir şeyleri büyüyle dağıt</div><div id="g4">Koridora çık</div><div id="g5">Terasa çık</div></div>
 <div id="hint"><span class="key" id="hKey">Tab</span><span id="hText">Bölümün hedeflerini görmek için bas</span></div>
 <div id="toast"></div>
+<div id="ver">yerel sürüm</div>
 <div id="cross"></div>
 <div id="start">
   <h1>Büyücünün Odası</h1>
@@ -1857,6 +1859,10 @@ function frame() {
 renderer.compile(scene, camera);
 requestAnimationFrame(() => { const l = document.getElementById('load'); l.style.opacity = 0; setTimeout(() => l.remove(), 800); });
 frame();
+// which build is running (written by the GitHub Pages workflow) — lets testers confirm an update arrived
+fetch('version.json', { cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(v => {
+  if (v) document.getElementById('ver').textContent = `sürüm ${v.sha.slice(0, 7)} · ${v.branch} · ${v.time}`;
+}).catch(() => {});
 window.__dbg = { scene, camera, wiz, renderer, frame, doorState, setQuest, curtains, getDrag: () => curtainDrag, lights, interact, currentAction, grab, release, aimHit, aimItem, getHeld: () => held, fixSize: (w, h) => { camera.aspect = w / h; camera.updateProjectionMatrix(); renderer.setSize(w, h, false); composer.setSize(w, h); }, getYaw: () => yaw, setView: (y, p, d) => { yaw = y; pitch = p; dist = d; camPos.set(0, 0, 0); }, start: () => { started = true; document.getElementById('start')?.remove(); } };
 </script>
 </body>
