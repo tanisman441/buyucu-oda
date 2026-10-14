@@ -35,6 +35,10 @@
   #start p{font-family:Nunito,sans-serif;font-weight:600;opacity:.75;margin:10px 0}
   #start .ctl{margin-top:26px;display:flex;gap:22px;font-family:Nunito,sans-serif;font-size:15px;opacity:.8;flex-wrap:wrap;justify-content:center}
   #start .ctl span{display:flex;gap:8px;align-items:center}
+  #dlg{position:fixed;left:50%;bottom:86px;transform:translate(-50%,8px);width:min(620px,calc(100vw - 32px));box-sizing:border-box;padding:18px 24px 14px;border-radius:12px;background:rgba(18,12,8,.78);backdrop-filter:blur(6px);border:1px solid rgba(245,199,106,.35);color:#f4efe4;font-family:Nunito,sans-serif;font-size:18px;line-height:1.45;opacity:0;transition:.25s;pointer-events:none}
+  #dlg.on{opacity:1;transform:translate(-50%,0)}
+  #dlg b{display:block;font-family:'Cormorant Garamond',serif;font-weight:600;font-size:23px;color:#f5c76a;margin-bottom:6px}
+  #dlg small{display:block;text-align:right;opacity:.6;font-size:13px;margin-top:8px}
   #load{position:fixed;inset:0;background:#000;color:#f4efe4;display:flex;align-items:center;justify-content:center;font-family:'Cormorant Garamond',serif;font-size:28px;z-index:9;transition:opacity .8s}
 </style>
 <script type="importmap">
@@ -53,6 +57,7 @@
 <div id="goals"><h3>Bölüm hedefleri</h3><div id="g0">Masadaki asanı al</div><div id="g1">Lumos! Asanı yak</div><div id="g2">Pencereden dışarı bak</div><div id="g3">Bir şeyleri büyüyle dağıt</div><div id="g4">Koridora çık</div><div id="g5">Terasa çık</div></div>
 <div id="hint"><span class="key" id="hKey">Tab</span><span id="hText">Bölümün hedeflerini görmek için bas</span></div>
 <div id="toast"></div>
+<div id="dlg"><b>Profesör Aldric Kuzgunay</b><span id="dlgText"></span><small id="dlgMore"></small></div>
 <div id="ver">yerel sürüm</div>
 <div id="cross"></div>
 <div id="start">
@@ -1397,6 +1402,7 @@ function aimingAtCandles() {
 }
 // the action E would do right now: { key, label, run }
 function currentAction() {
+  if (prof.ready && !dlg.open && near(prof.root.position, 1.8)) return { label: 'Profesörle konuş', run: talkToProf };
   if (nearWand()) return { label: 'Asayı al', run: () => {
     hasWand = true; sparkle.visible = false; faceTo(WAND_DESK);
     playOnce('pick', () => { wand.visible = false; if (wiz.wand) wiz.wand.visible = true; sfx.pickup(WAND_DESK); });
@@ -1434,7 +1440,7 @@ function setFire(on, spoken) {
   if (spoken) toast(on ? '<i>Incendio!</i>' : '<i>Aguamenti!</i>', 1300);
   if (!on) for (let i = 0; i < 16; i++) spark(FIRE.clone().add(new THREE.Vector3(0, .2, (Math.random() - .5) * .5)), new THREE.Vector3((Math.random() - .5) * .3, .6 + Math.random() * .6, (Math.random() - .5) * .3), .8 + Math.random() * .6, .04, 0xff7a30);
 }
-function interact() { const a = currentAction(); if (a) a.run(); }
+function interact() { if (dlg.open) { nextLine(); return; } const a = currentAction(); if (a) a.run(); }
 function toggleLumos() {
   if (!hasWand) { toast('Önce asanı al.', 1600); return; }
   lumos = !lumos;
@@ -1659,6 +1665,112 @@ function updateGrab(dt, t) {
   if (hoverTick % 20 === 0) sfx.hum(to);
 }
 
+// ---------------------------------------------------------------- professor NPC on the terrace
+// Same KayKit Mage (CC0) with hat and staff kept, robes recoloured emerald. Wanders between random
+// points inside the terrace; E nearby opens a short dialogue (E advances, the last line closes it).
+const prof = { root: new THREE.Group(), mixer: null, act: {}, ready: false, target: new THREE.Vector3(), wait: 1.5, walkW: 0, stuck: 0 };
+prof.root.position.set(-14, 0, 1);
+scene.add(prof.root);
+const PROF_BOX = { x0: TX0 + 1.5, x1: TX1 - 1.5, z0: TZ0 + 1.5, z1: TZ1 - 1.5 };
+const PROF_LINES = [
+  'Ah, yeni bir yüz! Ben Profesör Aldric Kuzgunay, bu kulede Göksel Büyüler dersini veririm.',
+  'Bulutların bu kadar üstünde rüzgâr bile fısıldayarak eser; iyi dinlersen sana büyünün sırlarını anlatır.',
+  'Asanı özenle kullan ve merakını hiç kaybetme. Haydi, şatoyu keşfetmeye devam et!',
+];
+const dlg = { open: false, i: 0, timer: 0 };
+function profRecolor(img) {
+  const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
+  const g = c.getContext('2d'); g.drawImage(img, 0, 0);
+  const d = g.getImageData(0, 0, c.width, c.height), px = d.data, col = new THREE.Color(), hsl = {};
+  for (let i = 0; i < px.length; i += 4) {
+    col.setRGB(px[i] / 255, px[i + 1] / 255, px[i + 2] / 255, THREE.LinearSRGBColorSpace); col.getHSL(hsl, THREE.LinearSRGBColorSpace);
+    const h = hsl.h * 360;
+    if (h > 225 && h < 290 && hsl.s > .12) col.setHSL(.39, .55, .02 + hsl.l * .3, THREE.LinearSRGBColorSpace);           // purple robe/hat -> emerald
+    else if (h > 300 && h < 345 && hsl.s > .4) col.setHSL(.11, .6, .1 + hsl.l * .35, THREE.LinearSRGBColorSpace);        // magenta cape -> old gold
+    else continue;
+    px[i] = col.r * 255; px[i + 1] = col.g * 255; px[i + 2] = col.b * 255;
+  }
+  g.putImageData(d, 0, 0);
+  const t = new THREE.CanvasTexture(c); t.flipY = false; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+  return t;
+}
+new GLTFLoader().load('models/Mage.glb', gltf => {
+  const model = gltf.scene;
+  model.scale.setScalar(MODEL_SCALE * 1.12);
+  for (const n of ['Spellbook', 'Spellbook_open', '1H_Wand']) { const o = model.getObjectByName(n); if (o) o.visible = false; }
+  let tex = null;
+  model.traverse(o => {
+    if (!o.isMesh) return;
+    o.castShadow = o.receiveShadow = true; o.frustumCulled = false;
+    if (!tex) tex = profRecolor(o.material.map.image);
+    o.material = new THREE.MeshStandardMaterial({ map: tex, roughness: .8 });
+  });
+  prof.root.add(model);
+  prof.mixer = new THREE.AnimationMixer(model);
+  const clip = n => gltf.animations.find(a => a.name === n);
+  for (const [k, n] of [['idle', 'Idle'], ['walk', 'Walking_A']]) { prof.act[k] = prof.mixer.clipAction(clip(n)); prof.act[k].play(); }
+  prof.act.walk.setEffectiveWeight(0); prof.act.walk.timeScale = .75;
+  prof.target.copy(prof.root.position);
+  prof.ready = true;
+});
+function profBlocked(x, z) {
+  const r = .35;
+  if (x < PROF_BOX.x0 || x > PROF_BOX.x1 || z < PROF_BOX.z0 || z > PROF_BOX.z1) return true;
+  for (const c of colliders) if (x > c.x0 - r && x < c.x1 + r && z > c.z0 - r && z < c.z1 + r) return true;
+  return false;
+}
+function pickProfTarget() {
+  for (let k = 0; k < 20; k++) {
+    const x = THREE.MathUtils.lerp(PROF_BOX.x0, PROF_BOX.x1, Math.random()), z = THREE.MathUtils.lerp(PROF_BOX.z0, PROF_BOX.z1, Math.random());
+    if (!profBlocked(x, z) && Math.hypot(x - prof.root.position.x, z - prof.root.position.z) > 2) { prof.target.set(x, 0, z); return; }
+  }
+  prof.target.copy(prof.root.position);
+}
+function talkToProf() {
+  dlg.open = true; dlg.i = -1; nextLine(); sfx.chime();
+}
+function nextLine() {
+  dlg.i++;
+  const el = document.getElementById('dlg');
+  if (dlg.i >= PROF_LINES.length) { dlg.open = false; el.classList.remove('on'); prof.wait = 2; return; }
+  document.getElementById('dlgText').textContent = PROF_LINES[dlg.i];
+  document.getElementById('dlgMore').textContent = dlg.i < PROF_LINES.length - 1 ? 'E: devam' : 'E: kapat';
+  dlg.timer = 9; el.classList.add('on');
+}
+function updateProf(dt) {
+  if (!prof.ready) return;
+  const pp = prof.root.position, wp = wiz.root.position;
+  const toWiz = Math.hypot(wp.x - pp.x, wp.z - pp.z);
+  if (dlg.open) {
+    // look at the player while talking; walking away or waiting long enough moves the dialogue on
+    const want = Math.atan2(wp.x - pp.x, wp.z - pp.z); let d = want - prof.root.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d));
+    prof.root.rotation.y += d * Math.min(1, dt * 5);
+    dlg.timer -= dt;
+    if (toWiz > 3.5) { dlg.i = PROF_LINES.length - 1; nextLine(); }
+    else if (dlg.timer <= 0) nextLine();
+  }
+  let moving = false;
+  if (!dlg.open) {
+    if (prof.wait > 0) prof.wait -= dt;
+    else {
+      const dx = prof.target.x - pp.x, dz = prof.target.z - pp.z, dd = Math.hypot(dx, dz);
+      if (dd < .15) { prof.wait = 2 + Math.random() * 4; pickProfTarget(); }
+      else if (toWiz > 1.1) {
+        const sp = .7 * dt, nx = pp.x + dx / dd * sp, nz = pp.z + dz / dd * sp;
+        if (profBlocked(nx, nz)) { if ((prof.stuck += dt) > .3) { prof.stuck = 0; pickProfTarget(); } }
+        else {
+          pp.x = nx; pp.z = nz; moving = true;
+          const want = Math.atan2(dx, dz); let d = want - prof.root.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d));
+          prof.root.rotation.y += d * Math.min(1, dt * 4);
+        }
+      }
+    }
+  }
+  prof.walkW += ((moving ? 1 : 0) - prof.walkW) * Math.min(1, dt * 6);
+  prof.act.walk.setEffectiveWeight(prof.walkW); prof.act.idle.setEffectiveWeight(1 - prof.walkW);
+  prof.mixer.update(dt);
+}
+
 // ---------------------------------------------------------------- loop
 const clock = new THREE.Clock();
 const vel = new THREE.Vector3(); let hintTick = 0, hintAct = null, airborne = false, jumpV = 0, airW = 0, stepDist = 0, facing = Math.PI, moveAmt = 0;
@@ -1669,6 +1781,7 @@ function collide(x, z) {
   const r = .24;
   if (!walkable(x, z, r)) return true;
   for (const c of colliders) if (x > c.x0 - r && x < c.x1 + r && z > c.z0 - r && z < c.z1 + r) return true;
+  if (prof.ready && Math.hypot(x - prof.root.position.x, z - prof.root.position.z) < .55) return true;
   return false;
 }
 function frame() {
@@ -1743,6 +1856,7 @@ function frame() {
   if (!camPos.lengthSq()) camPos.copy(want);
   camPos.lerp(want, Math.min(1, dt * 9)); camera.position.copy(camPos); camera.lookAt(tgt);
 
+  updateProf(dt);
   updateGrab(dt, t);
   syncPhysics(dt);
   updateSpells(dt);
@@ -1846,7 +1960,8 @@ function frame() {
   // hint
   const hk = document.getElementById('hKey'), ht = document.getElementById('hText');
   if (++hintTick % 6 === 0) hintAct = currentAction();
-  if (hintAct) { hk.textContent = 'E'; ht.textContent = hintAct.label; }
+  if (dlg.open) { hk.textContent = 'E'; ht.textContent = dlg.i < PROF_LINES.length - 1 ? 'Devam' : 'Kapat'; }
+  else if (hintAct) { hk.textContent = 'E'; ht.textContent = hintAct.label; }
   else if (quest === 1) { hk.textContent = 'F'; ht.textContent = 'Lumos'; }
   else if (quest === 3) { hk.textContent = 'Sol tık'; ht.textContent = 'Güç topu at'; }
   else if (quest === 4) { hk.textContent = 'E'; ht.textContent = 'Kapıya git ve aç'; }
@@ -1863,7 +1978,7 @@ frame();
 fetch('version.json', { cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(v => {
   if (v) document.getElementById('ver').textContent = `sürüm ${v.sha.slice(0, 7)} · ${v.branch} · ${v.time}`;
 }).catch(() => {});
-window.__dbg = { scene, camera, wiz, renderer, frame, doorState, setQuest, curtains, getDrag: () => curtainDrag, lights, interact, currentAction, grab, release, aimHit, aimItem, getHeld: () => held, fixSize: (w, h) => { camera.aspect = w / h; camera.updateProjectionMatrix(); renderer.setSize(w, h, false); composer.setSize(w, h); }, getYaw: () => yaw, setView: (y, p, d) => { yaw = y; pitch = p; dist = d; camPos.set(0, 0, 0); }, start: () => { started = true; document.getElementById('start')?.remove(); } };
+window.__dbg = { prof, dlg, scene, camera, wiz, renderer, frame, doorState, setQuest, curtains, getDrag: () => curtainDrag, lights, interact, currentAction, grab, release, aimHit, aimItem, getHeld: () => held, fixSize: (w, h) => { camera.aspect = w / h; camera.updateProjectionMatrix(); renderer.setSize(w, h, false); composer.setSize(w, h); }, getYaw: () => yaw, setView: (y, p, d) => { yaw = y; pitch = p; dist = d; camPos.set(0, 0, 0); }, start: () => { started = true; document.getElementById('start')?.remove(); } };
 </script>
 </body>
 </html>
