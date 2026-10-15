@@ -44,7 +44,13 @@
   #houses button i{display:block;width:44px;height:10px;border-radius:5px}
   #houses button:hover{border-color:rgba(244,239,228,.75)}
   #houses button.sel{border-color:#f5c76a;background:rgba(245,199,106,.18);box-shadow:0 0 14px rgba(245,199,106,.45)}
-  #load{position:fixed;inset:0;background:#000;color:#f4efe4;display:flex;align-items:center;justify-content:center;font-family:'Cormorant Garamond',serif;font-size:28px;z-index:9;transition:opacity .8s}
+  #looks{display:flex;flex-direction:column;gap:8px;margin:10px 0 4px;font-family:Nunito,sans-serif;font-size:14px}
+  #looks .row{display:flex;align-items:center;gap:8px;justify-content:center}
+  #looks .row>span{width:78px;text-align:right;opacity:.75}
+  #looks button{min-width:34px;height:30px;padding:0 10px;border-radius:15px;border:2px solid rgba(244,239,228,.3);background:rgba(0,0,0,.35);color:#f4efe4;font:600 13px Nunito,sans-serif;cursor:pointer;display:flex;align-items:center;gap:6px}
+  #looks button i{display:block;width:14px;height:14px;border-radius:50%;border:1px solid rgba(255,255,255,.4)}
+  #looks button.sel{border-color:#f5c76a;box-shadow:0 0 10px rgba(245,199,106,.45)}
+  #load{pointer-events:none;position:fixed;inset:0;background:#000;color:#f4efe4;display:flex;align-items:center;justify-content:center;font-family:'Cormorant Garamond',serif;font-size:28px;z-index:9;transition:opacity .8s}
 </style>
 <script type="importmap">
 { "imports": {
@@ -69,6 +75,7 @@
   <h1>Büyücünün Odası</h1>
   <p id="houseAsk">Binanı seç</p>
   <div id="houses"></div>
+  <div id="looks"></div>
   <p id="startTxt" style="visibility:hidden">Başlamak için tıkla</p>
   <div class="ctl">
     <span><b class="key">W A S D</b> yürü</span>
@@ -1241,6 +1248,32 @@ for (const [k, h] of Object.entries(HOUSES)) {
   document.getElementById('houses').appendChild(b);
 }
 
+// character look (skin tone, hair colour, hair style), remembered as JSON under 'buyucu-karakter'
+const LOOKS = {
+  ten: { label: 'Ten', opts: { acik: ['Açık', '#f5bc97'], bugday: ['Buğday', '#d99a6c'], esmer: ['Esmer', '#a86d45'], koyu: ['Koyu', '#6a4128'] } },
+  sac: { label: 'Saç rengi', opts: { siyah: ['Siyah', '#2a2629'], kahve: ['Kahverengi', '#5a3a22'], kizil: ['Kızıl', '#a0441c'], sari: ['Sarı', '#d6b25e'] } },
+  stil: { label: 'Saç stili', opts: { kisa: ['Kısa'], uzun: ['Uzun'], topuz: ['Topuz'] } },
+};
+const look = { ten: 'acik', sac: 'siyah', stil: 'kisa' };
+try { const v = JSON.parse(localStorage.getItem('buyucu-karakter') || '{}'); for (const k in look) if (LOOKS[k].opts[v[k]]) look[k] = v[k]; } catch (e) {}
+function chooseLook(k, v) {
+  look[k] = v;
+  try { localStorage.setItem('buyucu-karakter', JSON.stringify(look)); } catch (e) {}
+  for (const b of document.querySelectorAll(`#looks button[data-k="${k}"]`)) b.classList.toggle('sel', b.dataset.v === v);
+  applyHouse();
+}
+for (const [k, g] of Object.entries(LOOKS)) {
+  const row = document.createElement('div'); row.className = 'row'; row.innerHTML = `<span>${g.label}</span>`;
+  for (const [v, [name, col]] of Object.entries(g.opts)) {
+    const b = document.createElement('button'); b.dataset.k = k; b.dataset.v = v; b.title = name;
+    b.innerHTML = col ? `<i style="background:${col}"></i>${name}` : name;
+    b.classList.toggle('sel', look[k] === v);
+    b.addEventListener('click', e => { e.stopPropagation(); chooseLook(k, v); });
+    row.appendChild(b);
+  }
+  document.getElementById('looks').appendChild(row);
+}
+
 // ---------------------------------------------------------------- character
 // KayKit "Mage" (CC0, Kay Lousberg) restyled as a young Hogwarts student:
 // hat hidden, robe recoloured black, cape scarlet, plus round glasses, scar and a house scarf.
@@ -1250,11 +1283,18 @@ scene.add(wiz.root);
 wiz.root.position.set(.4, 0, 1.4);
 wiz.root.rotation.y = Math.PI;
 
+// the Mage texture is an 8x4 grid of colour swatches: (0,0) face skin, (7,2) hand skin, (1,0) hair
+const SKIN_REF = [245, 188, 151], HAIR_REF = 40;
+const hexRGB = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
 function recolor(img, hs = HOUSES[house || 'aslan']) {
+  const skin = hexRGB(LOOKS.ten.opts[look.ten][1]), hair = look.sac === 'siyah' ? null : hexRGB(LOOKS.sac.opts[look.sac][1]);
   const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
   const g = c.getContext('2d'); g.drawImage(img, 0, 0);
   const d = g.getImageData(0, 0, c.width, c.height), px = d.data, col = new THREE.Color(), hsl = {};
   for (let i = 0; i < px.length; i += 4) {
+    const sx = Math.floor((i / 4 % c.width) * 8 / c.width), sy = Math.floor(Math.floor(i / 4 / c.width) * 4 / c.height);
+    if ((sx === 0 && sy === 0) || (sx === 7 && sy === 2)) { for (let k = 0; k < 3; k++) px[i + k] = Math.min(255, skin[k] * px[i + k] / SKIN_REF[k]); continue; }
+    if (sx === 1 && sy === 0) { if (hair) { const f = Math.min(1.4, (px[i] + px[i + 1] + px[i + 2]) / 3 / HAIR_REF); for (let k = 0; k < 3; k++) px[i + k] = Math.min(255, hair[k] * f); } continue; }
     col.setRGB(px[i] / 255, px[i + 1] / 255, px[i + 2] / 255, THREE.LinearSRGBColorSpace); col.getHSL(hsl, THREE.LinearSRGBColorSpace);
     const h = hsl.h * 360;
     if (h > 225 && h < 290 && hsl.s > .12) col.setHSL(hs.hue, .3, .025 + hsl.l * .17, THREE.LinearSRGBColorSpace);       // purple robe -> house-tinted black wool
@@ -1299,7 +1339,16 @@ function dressUp(model) {
     wiz.tails.push(pv);
   }
   scarf.position.set(0, .2, 0); chest.add(scarf); wiz.scarf = scarf;
-  for (const o of [glasses, scar, scarf]) o.traverse(m => { if (m.isMesh) { m.castShadow = m.material !== lens; m.receiveShadow = true; } });
+  // extra hair styles on the head bone (head-local: x ±.54, y -.17..0.96, back of head z -.75)
+  wiz.hairM = new THREE.MeshStandardMaterial({ color: 0x2a2629, roughness: .85 });
+  const long = new THREE.Group();
+  const backH = new THREE.Mesh(new RoundedBoxGeometry(1.02, 1.15, .26, 3, .1), wiz.hairM); backH.position.set(0, .05, -.66); long.add(backH);
+  for (const sx of [-1, 1]) { const lock = new THREE.Mesh(new RoundedBoxGeometry(.14, .8, .5, 2, .06), wiz.hairM); lock.position.set(sx * .5, .12, -.28); long.add(lock); }
+  const bun = new THREE.Group();
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(.27, 20, 14), wiz.hairM); ball.position.set(0, .78, -.66); bun.add(ball);
+  wiz.hairStyles = { uzun: long, topuz: bun };
+  for (const g of [long, bun]) { g.visible = false; head.add(g); }
+  for (const o of [glasses, scar, scarf, long, bun]) o.traverse(m => { if (m.isMesh) { m.castShadow = m.material !== lens; m.receiveShadow = true; } });
 }
 
 new GLTFLoader().load('models/Mage.glb', gltf => {
@@ -1339,6 +1388,8 @@ new GLTFLoader().load('models/Mage.glb', gltf => {
 // repaint robe, cape and scarf in the chosen house's colours (safe to call before the model has loaded)
 function applyHouse() {
   if (!wiz.baseImg || !wiz.scarfM) return;
+  for (const [k, g] of Object.entries(wiz.hairStyles)) g.visible = look.stil === k;
+  wiz.hairM.color.set(LOOKS.sac.opts[look.sac][1]);
   const hs = HOUSES[house || 'aslan'], old = wiz.bodyMats[0].map, tex = recolor(wiz.baseImg, hs);
   for (const m of wiz.bodyMats) { m.map = tex; m.needsUpdate = true; }
   if (old !== tex) old.dispose();
@@ -2024,7 +2075,7 @@ frame();
 fetch('version.json', { cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(v => {
   if (v) document.getElementById('ver').textContent = `sürüm ${v.sha.slice(0, 7)} · ${v.branch} · ${v.time}`;
 }).catch(() => {});
-window.__dbg = { chooseHouse, prof, dlg, scene, camera, wiz, renderer, frame, doorState, setQuest, curtains, getDrag: () => curtainDrag, lights, interact, currentAction, grab, release, aimHit, aimItem, getHeld: () => held, fixSize: (w, h) => { camera.aspect = w / h; camera.updateProjectionMatrix(); renderer.setSize(w, h, false); composer.setSize(w, h); }, getYaw: () => yaw, setView: (y, p, d) => { yaw = y; pitch = p; dist = d; camPos.set(0, 0, 0); }, start: () => { started = true; document.getElementById('start')?.remove(); } };
+window.__dbg = { chooseLook, look, chooseHouse, prof, dlg, scene, camera, wiz, renderer, frame, doorState, setQuest, curtains, getDrag: () => curtainDrag, lights, interact, currentAction, grab, release, aimHit, aimItem, getHeld: () => held, fixSize: (w, h) => { camera.aspect = w / h; camera.updateProjectionMatrix(); renderer.setSize(w, h, false); composer.setSize(w, h); }, getYaw: () => yaw, setView: (y, p, d) => { yaw = y; pitch = p; dist = d; camPos.set(0, 0, 0); }, start: () => { started = true; document.getElementById('start')?.remove(); } };
 </script>
 </body>
 </html>
