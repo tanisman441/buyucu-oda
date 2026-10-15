@@ -28,6 +28,7 @@ Keep each change small and testable; if a request is large, split it and say wha
 - sound (`sfx`, all procedural Web Audio, positional)
 - physics (`world`; meshes tagged with `solid()` become static boxes, `loose(mesh, kg, kind)` or `userData.dynGroup` become movable objects)
 - character (KayKit Mage GLB restyled; `wiz.act` animations, `playOnce()` for one-shots)
+- collectible stars (`STARS`, `collectStar()`, localStorage `buyucu-yildizlar`)
 - composer (bloom, grade), input, quests (`Q`, `setQuest`), interactions (`currentAction()` drives the E key and the bottom hint), lights state (`lights`), spell (force orb), levitation (right-click grab, curtains drag), main loop `frame()`
 
 `window.__dbg` exposes helpers (teleport via `__dbg.wiz.root.position`, `setView`, `frame`, …) for debugging — keep it.

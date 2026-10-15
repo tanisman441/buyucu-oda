@@ -31,6 +31,7 @@
   #cross.hold::after{border-style:dashed;animation:spin 1.6s linear infinite}
   @keyframes spin{to{transform:rotate(360deg)}}
   #ver{position:fixed;right:12px;bottom:8px;font:600 11px Nunito,sans-serif;color:rgba(244,239,228,.45);pointer-events:none;text-shadow:0 1px 3px rgba(0,0,0,.6)}
+  #stars{font-family:Nunito,sans-serif;font-weight:700;font-size:17px;color:#ffd770;margin:8px 0 0 35px;text-shadow:0 0 8px rgba(255,200,80,.5)}
   #tscore{font-family:Nunito,sans-serif;font-weight:700;font-size:17px;color:#f5c76a;margin:10px 0 0 35px;opacity:0;transition:opacity .4s}
   #tscore.on{opacity:.95}
   #toast{position:fixed;top:42%;left:50%;transform:translate(-50%,-50%);font-family:'Cormorant Garamond',serif;font-size:34px;color:#fff6e2;text-shadow:0 2px 18px rgba(0,0,0,.6);opacity:0;transition:opacity .6s;pointer-events:none;text-align:center}
@@ -73,6 +74,7 @@
   <div id="title"><span class="star">✦</span><span id="qTitle">Kule odası</span></div>
   <div id="sub">Masadaki asanı al</div>
   <div id="tscore">Hedefler: 0/3</div>
+  <div id="stars">★ 0/10</div>
 </div>
 <div id="goals"><h3>Bölüm hedefleri</h3></div>
 <div id="hint"><span class="key" id="hKey">Tab</span><span id="hText">Bölümün hedeflerini görmek için bas</span></div>
@@ -2061,6 +2063,7 @@ function currentAction() {
     faceTo(new THREE.Vector3(-1.5, 0, S)); playOnce('use');
     doorState.target = doorState.target ? 0 : 1; sfx.door(new THREE.Vector3(-1.5, 1.2, S), doorState.target);
   } };
+  { const k = nearStar(); if (k >= 0) return { label: 'Yıldızı topla', run: () => { faceTo(new THREE.Vector3(STARS[k][0], 0, STARS[k][2])); playOnce('pick', () => {}); collectStar(k); } }; }
   if (near(CLASS_OUT, 1.3) || near(CLASS_IN, 1.3)) return { label: classDoor.target ? 'Derslik kapısını kapat' : 'Derslik kapısını aç', run: () => {
     faceTo(new THREE.Vector3(CD_XC, 0, CZ1 + T / 2)); playOnce('use');
     classDoor.target = classDoor.target ? 0 : 1; sfx.door(new THREE.Vector3(CD_XC, 1.2, CZ1 + T / 2), classDoor.target);
@@ -2500,6 +2503,53 @@ function updateNPC(n, dt) {
   n.mixer.update(dt);
 }
 
+// ---- ten golden stars hidden around the school (E to collect); collected ones are remembered in localStorage
+const STARS = [
+  [2.6, 1.0, -2.6, 'kule odası, pencerenin yanı'], [1.4, 2.78, 3.25, 'kule odası, kitaplığın üstü'],
+  [-8.55, 1.0, 4.25, 'koridorun batı köşesi'], [-2.5, 2.3, 7.05, 'zırhın başının üstü'],
+  [-25.6, 1.0, 4.3, 'teras, teleskobun yanı'], [-18.6, 1.0, 7.4, 'teras, çimenlik'],
+  [10.6, 1.05, 4.35, 'kütüphane, okuma masası'], [-7.5, 1.5, -3.85, 'Büyük Salon, öğretmen masası'],
+  [11.4, 1.0, 1.7, 'yatakhane, köşe'], [-4.1, 1.0, 12.6, 'derslik, arka köşe'],
+];
+const starState = { got: new Set(), meshes: [] };
+try { for (const k of JSON.parse(localStorage.getItem('buyucu-yildizlar') || '[]')) if (k >= 0 && k < STARS.length) starState.got.add(k); } catch (e) {}
+{
+  const sh = new THREE.Shape();
+  for (let i = 0; i < 10; i++) { const a = Math.PI / 2 + i * Math.PI / 5, r = i % 2 ? .075 : .17; i ? sh.lineTo(Math.cos(a) * r, Math.sin(a) * r) : sh.moveTo(Math.cos(a) * r, Math.sin(a) * r); }
+  const geo = new THREE.ExtrudeGeometry(sh, { depth: .04, bevelEnabled: true, bevelThickness: .015, bevelSize: .012, bevelSegments: 2 }); geo.center();
+  const mat = new THREE.MeshStandardMaterial({ color: 0xffd060, roughness: .25, metalness: .8, emissive: 0xffa020, emissiveIntensity: .7 });
+  STARS.forEach(([x, y, z], k) => {
+    const g = new THREE.Group(); g.position.set(x, y, z); scene.add(g);
+    const m = new THREE.Mesh(geo, mat); g.add(m);
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0xffd27a, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: .55 }));
+    glow.scale.setScalar(.75); g.add(glow);
+    g.visible = !starState.got.has(k); g.userData = { y, ph: k * 1.3 };
+    starState.meshes.push(g);
+  });
+}
+function updateStarHud() { document.getElementById('stars').textContent = `★ ${starState.got.size}/${STARS.length}`; }
+updateStarHud();
+function nearStar() {
+  const p = wiz.root.position;
+  for (let k = 0; k < STARS.length; k++) if (!starState.got.has(k) && Math.hypot(p.x - STARS[k][0], p.z - STARS[k][2]) < 1.2) return k;
+  return -1;
+}
+function collectStar(k) {
+  const g = starState.meshes[k]; starState.got.add(k); g.visible = false;
+  try { localStorage.setItem('buyucu-yildizlar', JSON.stringify([...starState.got])); } catch (e) {}
+  for (let i = 0; i < 18; i++) spark(g.position, new THREE.Vector3().randomDirection().multiplyScalar(.9 + Math.random()), .5 + Math.random() * .4, .04, i % 2 ? 0xffd070 : 0xfff6d0);
+  sfx.pickup(g.position); updateStarHud();
+  if (starState.got.size < STARS.length) toast(`★ Yıldız toplandı! <span style="font-size:24px;opacity:.85">${starState.got.size}/${STARS.length}</span>`, 1500);
+  else {
+    toast('✦ Tüm yıldızları topladın! ✦<br><span style="font-size:22px;opacity:.85">Okulun her köşesini keşfettin</span>', 5000); sfx.chime();
+    const c = wiz.root.position.clone().setY(1.2);
+    for (let i = 0; i < 44; i++) { const a = Math.random() * 6.28; spark(c.clone(), new THREE.Vector3(Math.cos(a) * (.6 + Math.random()), 1 + Math.random() * 1.8, Math.sin(a) * (.6 + Math.random())), 1.2 + Math.random() * .9, .05, 0xffd070); }
+  }
+}
+function updateStars(t) {
+  for (const g of starState.meshes) if (g.visible) { g.rotation.y = t * 1.4 + g.userData.ph; g.position.y = g.userData.y + Math.sin(t * 2 + g.userData.ph) * .05; g.children[1].material.opacity = .45 + .15 * Math.sin(t * 3 + g.userData.ph); }
+}
+
 // ---------------------------------------------------------------- loop
 const clock = new THREE.Clock();
 const vel = new THREE.Vector3(); let hintTick = 0, hintAct = null, airborne = false, jumpV = 0, airW = 0, stepDist = 0, facing = Math.PI, moveAmt = 0;
@@ -2625,6 +2675,7 @@ function frame() {
   if (doorBody) doorBody.collisionResponse = doorState.open < .3;
   updateHall(t, dt);
   updatePractice(t, dt, p);
+  updateStars(t);
   classDoor.open += (classDoor.target - classDoor.open) * Math.min(1, dt * 3.2);
   classPivot.rotation.y = -classDoor.open * 1.75;
   if (!classSeen && p.z > CLASS.z0 + .3 && p.x < CLASS.x1 && p.x > CLASS.x0) { classSeen = true; sfx.chime(); toast('Büyü Sınıfı', 2600); }
@@ -2734,7 +2785,7 @@ renderer.compileAsync(scene, camera).catch(() => {}).then(() => {
 fetch('version.json', { cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(v => {
   if (v) document.getElementById('ver').textContent = `sürüm ${v.sha.slice(0, 7)} · ${v.branch} · ${v.time}` + (LITE ? ' · hafif mod' : '');
 }).catch(() => {});
-window.__dbg = { classDoor, CLASS_BOARD_SPOT, dummies, practice, castSpell, giveWand: () => { hasWand = true; }, dormDoor, BED_SPOT, isResting: () => resting, hallDoor, completeQuest, getQuest: () => Q[quest].id, libDoor, LIB_BOOKS, npcs, STUDENTS, updateNPC, startIntro, LITE, chooseLook, look, chooseHouse, prof, dlg, scene, camera, wiz, renderer, frame, doorState, setQuest, curtains, getDrag: () => curtainDrag, lights, interact, currentAction, grab, release, aimHit, aimItem, getHeld: () => held, fixSize: (w, h) => { camera.aspect = w / h; camera.updateProjectionMatrix(); renderer.setSize(w, h, false); composer.setSize(w, h); }, getYaw: () => yaw, setView: (y, p, d) => { yaw = y; pitch = p; dist = d; camPos.set(0, 0, 0); }, start: () => { started = true; document.getElementById('start')?.remove(); } };
+window.__dbg = { STARS, starState, collide: (x, z) => collide(x, z), walkable, classDoor, CLASS_BOARD_SPOT, dummies, practice, castSpell, giveWand: () => { hasWand = true; }, dormDoor, BED_SPOT, isResting: () => resting, hallDoor, completeQuest, getQuest: () => Q[quest].id, libDoor, LIB_BOOKS, npcs, STUDENTS, updateNPC, startIntro, LITE, chooseLook, look, chooseHouse, prof, dlg, scene, camera, wiz, renderer, frame, doorState, setQuest, curtains, getDrag: () => curtainDrag, lights, interact, currentAction, grab, release, aimHit, aimItem, getHeld: () => held, fixSize: (w, h) => { camera.aspect = w / h; camera.updateProjectionMatrix(); renderer.setSize(w, h, false); composer.setSize(w, h); }, getYaw: () => yaw, setView: (y, p, d) => { yaw = y; pitch = p; dist = d; camPos.set(0, 0, 0); }, start: () => { started = true; document.getElementById('start')?.remove(); } };
 </script>
 </body>
 </html>
