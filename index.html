@@ -1327,8 +1327,8 @@ function lightLUT(h, s, l0, k) {
   return (r, g, b) => lut[(Math.max(r, g, b) + Math.min(r, g, b)) >> 1];
 }
 const isRobe = c => c.h > 225 && c.h < 290 && c.s > .12, isCape = c => c.h > 300 && c.h < 345 && c.s > .4;
-function recolor(img, hs = HOUSES[house || 'aslan']) {
-  const skin = hexRGB(LOOKS.ten.opts[look.ten][1]), hair = look.sac === 'siyah' ? null : hexRGB(LOOKS.sac.opts[look.sac][1]);
+function recolor(img, hs = HOUSES[house || 'aslan'], ten = look.ten, sac = look.sac) {
+  const skin = hexRGB(LOOKS.ten.opts[ten][1]), hair = sac === 'siyah' ? null : hexRGB(LOOKS.sac.opts[sac][1]);
   const robe = lightLUT(hs.hue, .3, .025, .17), cape = lightLUT(hs.hue, hs.sat, hs.l0, .35);   // house-tinted black wool, house-coloured cape
   return paintAtlas(img, (sx, sy, c) => {
     if ((sx === 0 && sy === 0) || (sx === 7 && sy === 2)) return (r, g, b) => [Math.min(255, skin[0] * r / SKIN_REF[0]), Math.min(255, skin[1] * g / SKIN_REF[1]), Math.min(255, skin[2] * b / SKIN_REF[2])];
@@ -1385,6 +1385,7 @@ function dressUp(model) {
 const mageGLB = new Promise((res, rej) => new GLTFLoader().load('models/Mage.glb', res, undefined, rej));
 mageGLB.then(gltf => {
   gltf.profScene = SkeletonUtils.clone(gltf.scene);
+  gltf.studentScenes = [0, 1, 2].map(() => SkeletonUtils.clone(gltf.scene));
   const model = gltf.scene;
   model.scale.setScalar(MODEL_SCALE);
   for (const n of ['Mage_Hat', 'Spellbook', 'Spellbook_open', '2H_Staff']) { const o = model.getObjectByName(n); if (o) o.visible = false; }
@@ -1540,7 +1541,7 @@ function aimingAtCandles() {
 }
 // the action E would do right now: { key, label, run }
 function currentAction() {
-  if (prof.ready && !dlg.open && near(prof.root.position, 1.8)) return { label: 'Profesörle konuş', run: talkToProf };
+  { const n = !dlg.open && nearestNPC(1.8); if (n) return { label: n.title, run: () => talkTo(n) }; }
   if (nearWand()) return { label: 'Asayı al', run: () => {
     hasWand = true; sparkle.visible = false; faceTo(WAND_DESK);
     playOnce('pick', () => { wand.visible = false; if (wiz.wand) wiz.wand.visible = true; sfx.pickup(WAND_DESK); });
@@ -1803,19 +1804,47 @@ function updateGrab(dt, t) {
   if (hoverTick % 20 === 0) sfx.hum(to);
 }
 
-// ---------------------------------------------------------------- professor NPC on the terrace
-// Same KayKit Mage (CC0) with hat and staff kept, robes recoloured emerald. Wanders between random
-// points inside the terrace; E nearby opens a short dialogue (E advances, the last line closes it).
-const prof = { root: new THREE.Group(), mixer: null, act: {}, ready: false, target: new THREE.Vector3(), wait: 1.5, walkW: 0, stuck: 0 };
-prof.root.position.set(-14, 0, 1);
-scene.add(prof.root);
-const PROF_BOX = { x0: TX0 + 1.5, x1: TX1 - 1.5, z0: TZ0 + 1.5, z1: TZ1 - 1.5 };
-const PROF_LINES = [
-  'Ah, yeni bir yüz! Ben Profesör Aldric Kuzgunay, bu kulede Göksel Büyüler dersini veririm.',
-  'Bulutların bu kadar üstünde rüzgâr bile fısıldayarak eser; iyi dinlersen sana büyünün sırlarını anlatır.',
-  'Asanı özenle kullan ve merakını hiç kaybetme. Haydi, şatoyu keşfetmeye devam et!',
-];
-// shared dialogue box: who = 'prof' (terrace NPC) or 'intro' (headmaster's welcome after the start screen)
+// ---------------------------------------------------------------- wandering NPCs: professor on the terrace, students in the corridor
+// All are clones of the same KayKit Mage (CC0), recoloured. Each wanders slowly between random points
+// inside its own rectangle, avoiding colliders, the other NPCs and the player; E nearby opens the dialogue.
+const npcs = [];
+function makeNPC({ name, title, pos, box, speed = .7, lines, avoid = [] }) {
+  const n = { name, title, lines, box, speed, avoid, root: new THREE.Group(), mixer: null, act: {}, ready: false, target: new THREE.Vector3(...pos), wait: 1 + Math.random() * 2, walkW: 0, stuck: 0 };
+  n.root.position.set(...pos); n.root.rotation.y = Math.random() * 6; scene.add(n.root); npcs.push(n);
+  return n;
+}
+function dressNPC(n, gltf, model, tex, scale, hide) {
+  model.scale.setScalar(scale);
+  for (const k of hide) { const o = model.getObjectByName(k); if (o) o.visible = false; }
+  const mat = new THREE.MeshStandardMaterial({ map: tex, roughness: .8 });
+  model.traverse(o => { if (o.isMesh) { o.castShadow = o.receiveShadow = true; o.frustumCulled = false; o.material = mat; } });
+  n.root.add(model);
+  n.mixer = new THREE.AnimationMixer(model);
+  const clip = k => gltf.animations.find(a => a.name === k);
+  for (const [k, c] of [['idle', 'Idle'], ['walk', 'Walking_A']]) { n.act[k] = n.mixer.clipAction(clip(c)); n.act[k].play(); }
+  n.act.walk.setEffectiveWeight(0); n.act.walk.timeScale = n.speed / .93;
+  n.mixer.update(Math.random() * 2);   // so they don't all breathe in sync
+  n.ready = true;
+}
+
+const prof = makeNPC({
+  name: 'Profesör Aldric Kuzgunay', title: 'Profesörle konuş', pos: [-14, 0, 1],
+  box: { x0: TX0 + 1.5, x1: TX1 - 1.5, z0: TZ0 + 1.5, z1: TZ1 - 1.5 },
+  lines: [
+    'Ah, yeni bir yüz! Ben Profesör Aldric Kuzgunay, bu kulede Göksel Büyüler dersini veririm.',
+    'Bulutların bu kadar üstünde rüzgâr bile fısıldayarak eser; iyi dinlersen sana büyünün sırlarını anlatır.',
+    'Asanı özenle kullan ve merakını hiç kaybetme. Haydi, şatoyu keşfetmeye devam et!',
+  ],
+});
+// corridor students, one per house (the player's own house among them or not); they keep clear of the dormitory door
+const STUDENT_BOX = { x0: CX0 + 1, x1: CX1 - 1, z0: CZ0 + .55, z1: CZ1 - .6 }, DOOR_CLEAR = { x0: -2.6, x1: -.4, z0: CZ0, z1: CZ0 + 1.3 };
+const STUDENTS = [
+  { house: 'aslan', ten: 'bugday', sac: 'kahve', name: 'Deniz Yalçın', pos: [-6, 0, 5.3], line: 'Bir tavsiye: kütüphanedeki uçan kitaplara sakın "kitap" deme, çok alınıyorlar!' },
+  { house: 'kartal', ten: 'acik', sac: 'sari', name: 'Ece Bulutay', pos: [1.2, 0, 5.6], line: "Duydun mu? Profesör Aldric'in teleskobuyla gece yarısı bulutların arasında bir ejderha görmüşler." },
+  { house: 'porsuk', ten: 'esmer', sac: 'siyah', name: 'Mert Toprakçı', pos: [4.6, 0, 5], line: 'Acıkırsan söyle; mutfaktaki ev cinleri Porsuklara hep fazladan kurabiye verir.' },
+].map(st => ({ ...st, npc: makeNPC({ name: `${st.name} · ${HOUSES[st.house].name}`, title: `${st.name.split(' ')[0]} ile konuş`, pos: st.pos, box: STUDENT_BOX, speed: .55, lines: [st.line], avoid: [DOOR_CLEAR] }) }));
+
+// shared dialogue box: who = 'npc' (dlg.npc = the speaker) or 'intro' (headmaster's welcome after the start screen)
 const dlg = { open: false, i: 0, timer: 0, who: null, lines: [], onEnd: null };
 const HEAD_NAME = 'Müdür Orhun Gökbilge';
 const introLines = () => [
@@ -1829,46 +1858,42 @@ function profRecolor(img) {
   return paintAtlas(img, (sx, sy, c) => isRobe(c) ? robe : isCape(c) ? cape : null);
 }
 mageGLB.then(gltf => {
-  const model = gltf.profScene;
-  model.scale.setScalar(MODEL_SCALE * 1.12);
-  for (const n of ['Spellbook', 'Spellbook_open', '1H_Wand']) { const o = model.getObjectByName(n); if (o) o.visible = false; }
-  let tex = null;
-  model.traverse(o => {
-    if (!o.isMesh) return;
-    o.castShadow = o.receiveShadow = true; o.frustumCulled = false;
-    if (!tex) tex = profRecolor(o.material.map.image);
-    o.material = new THREE.MeshStandardMaterial({ map: tex, roughness: .8 });
+  dressNPC(prof, gltf, gltf.profScene, profRecolor(gltf.profScene.getObjectByName('Mage_Body').material.map.image), MODEL_SCALE * 1.12, ['Spellbook', 'Spellbook_open', '1H_Wand']);
+  STUDENTS.forEach((st, k) => {
+    const model = gltf.studentScenes[k];
+    dressNPC(st.npc, gltf, model, recolor(model.getObjectByName('Mage_Body').material.map.image, HOUSES[st.house], st.ten, st.sac), MODEL_SCALE * .96, ['Mage_Hat', 'Spellbook', 'Spellbook_open', '2H_Staff', '1H_Wand']);
   });
-  prof.root.add(model);
-  prof.mixer = new THREE.AnimationMixer(model);
-  const clip = n => gltf.animations.find(a => a.name === n);
-  for (const [k, n] of [['idle', 'Idle'], ['walk', 'Walking_A']]) { prof.act[k] = prof.mixer.clipAction(clip(n)); prof.act[k].play(); }
-  prof.act.walk.setEffectiveWeight(0); prof.act.walk.timeScale = .75;
-  prof.target.copy(prof.root.position);
-  prof.ready = true;
 });
-function profBlocked(x, z) {
-  const r = .35;
-  if (x < PROF_BOX.x0 || x > PROF_BOX.x1 || z < PROF_BOX.z0 || z > PROF_BOX.z1) return true;
+function npcBlocked(n, x, z) {
+  const r = .35, bx = n.box;
+  if (x < bx.x0 || x > bx.x1 || z < bx.z0 || z > bx.z1) return true;
   for (const c of colliders) if (x > c.x0 - r && x < c.x1 + r && z > c.z0 - r && z < c.z1 + r) return true;
+  for (const c of n.avoid) if (x > c.x0 && x < c.x1 && z > c.z0 && z < c.z1) return true;
+  for (const o of npcs) if (o !== n && Math.hypot(x - o.root.position.x, z - o.root.position.z) < .9) return true;
   return false;
 }
-function pickProfTarget() {
+function pickTarget(n) {
+  const bx = n.box;
   for (let k = 0; k < 20; k++) {
-    const x = THREE.MathUtils.lerp(PROF_BOX.x0, PROF_BOX.x1, Math.random()), z = THREE.MathUtils.lerp(PROF_BOX.z0, PROF_BOX.z1, Math.random());
-    if (!profBlocked(x, z) && Math.hypot(x - prof.root.position.x, z - prof.root.position.z) > 2) { prof.target.set(x, 0, z); return; }
+    const x = THREE.MathUtils.lerp(bx.x0, bx.x1, Math.random()), z = THREE.MathUtils.lerp(bx.z0, bx.z1, Math.random());
+    if (!npcBlocked(n, x, z) && Math.hypot(x - n.root.position.x, z - n.root.position.z) > 1.5) { n.target.set(x, 0, z); return; }
   }
-  prof.target.copy(prof.root.position);
+  n.target.copy(n.root.position);
 }
-function openDialog(who, name, lines, onEnd) {
-  Object.assign(dlg, { open: true, i: -1, who, lines, onEnd });
+function nearestNPC(r) {
+  let best = null, bd = r;
+  for (const n of npcs) { if (!n.ready) continue; const d = Math.hypot(wiz.root.position.x - n.root.position.x, wiz.root.position.z - n.root.position.z); if (d < bd) { bd = d; best = n; } }
+  return best;
+}
+function talkTo(n) { openDialog('npc', n.name, n.lines, () => { n.wait = 2; }, n); }
+function openDialog(who, name, lines, onEnd, npc = null) {
+  Object.assign(dlg, { open: true, i: -1, who, lines, onEnd, npc });
   document.getElementById('dlgName').textContent = name;
   nextLine(); sfx.chime();
 }
-function talkToProf() { openDialog('prof', 'Profesör Aldric Kuzgunay', PROF_LINES, () => { prof.wait = 2; }); }
 function closeDialog() {
   dlg.open = false; document.getElementById('dlg').classList.remove('on');
-  const f = dlg.onEnd; dlg.onEnd = null; dlg.who = null; f?.();
+  const f = dlg.onEnd; dlg.onEnd = null; dlg.who = null; dlg.npc = null; f?.();
 }
 function nextLine() {
   if (!dlg.open) return;
@@ -1877,7 +1902,7 @@ function nextLine() {
   const last = dlg.i === dlg.lines.length - 1;
   document.getElementById('dlgText').textContent = dlg.lines[dlg.i];
   document.getElementById('dlgMore').textContent = (last ? 'E / tık: kapat' : 'E / tık: devam') + (dlg.who === 'intro' ? '  ·  Esc: atla' : '');
-  dlg.timer = dlg.who === 'prof' ? 9 : Infinity; document.getElementById('dlg').classList.add('on');
+  dlg.timer = dlg.npc ? 9 : Infinity; document.getElementById('dlg').classList.add('on');
 }
 document.getElementById('dlg').addEventListener('click', e => { e.stopPropagation(); nextLine(); });
 function startIntro() {
@@ -1887,38 +1912,34 @@ function startIntro() {
     clearTimeout(startIntro.t); startIntro.t = setTimeout(() => { if (!keys.Tab) g.classList.remove('on'); }, 5000);
   });
 }
-function updateProf(dt) {
-  if (!prof.ready) return;
-  const pp = prof.root.position, wp = wiz.root.position;
-  const toWiz = Math.hypot(wp.x - pp.x, wp.z - pp.z);
-  if (dlg.open && dlg.who === 'prof') {
+function turnTo(obj, x, z, k) { let d = Math.atan2(x - obj.position.x, z - obj.position.z) - obj.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d)); obj.rotation.y += d * k; }
+function updateNPC(n, dt) {
+  if (!n.ready) return;
+  const pp = n.root.position, wp = wiz.root.position;
+  const toWiz = Math.hypot(wp.x - pp.x, wp.z - pp.z), talking = dlg.npc === n;
+  if (talking) {
     // look at the player while talking; walking away or waiting long enough moves the dialogue on
-    const want = Math.atan2(wp.x - pp.x, wp.z - pp.z); let d = want - prof.root.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d));
-    prof.root.rotation.y += d * Math.min(1, dt * 5);
+    turnTo(n.root, wp.x, wp.z, Math.min(1, dt * 5));
     dlg.timer -= dt;
     if (toWiz > 3.5) closeDialog();
     else if (dlg.timer <= 0) nextLine();
   }
   let moving = false;
-  if (dlg.who !== 'prof') {
-    if (prof.wait > 0) prof.wait -= dt;
+  if (!talking) {
+    if (n.wait > 0) n.wait -= dt;
     else {
-      const dx = prof.target.x - pp.x, dz = prof.target.z - pp.z, dd = Math.hypot(dx, dz);
-      if (dd < .15) { prof.wait = 2 + Math.random() * 4; pickProfTarget(); }
+      const dx = n.target.x - pp.x, dz = n.target.z - pp.z, dd = Math.hypot(dx, dz);
+      if (dd < .15) { n.wait = 2 + Math.random() * 4; pickTarget(n); }
       else if (toWiz > 1.1) {
-        const sp = .7 * dt, nx = pp.x + dx / dd * sp, nz = pp.z + dz / dd * sp;
-        if (profBlocked(nx, nz)) { if ((prof.stuck += dt) > .3) { prof.stuck = 0; pickProfTarget(); } }
-        else {
-          pp.x = nx; pp.z = nz; moving = true;
-          const want = Math.atan2(dx, dz); let d = want - prof.root.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d));
-          prof.root.rotation.y += d * Math.min(1, dt * 4);
-        }
+        const sp = n.speed * dt, nx = pp.x + dx / dd * sp, nz = pp.z + dz / dd * sp;
+        if (npcBlocked(n, nx, nz)) { if ((n.stuck += dt) > .3) { n.stuck = 0; n.wait = .5 + Math.random(); pickTarget(n); } }
+        else { pp.x = nx; pp.z = nz; moving = true; turnTo(n.root, n.target.x, n.target.z, Math.min(1, dt * 4)); }
       }
     }
   }
-  prof.walkW += ((moving ? 1 : 0) - prof.walkW) * Math.min(1, dt * 6);
-  prof.act.walk.setEffectiveWeight(prof.walkW); prof.act.idle.setEffectiveWeight(1 - prof.walkW);
-  prof.mixer.update(dt);
+  n.walkW += ((moving ? 1 : 0) - n.walkW) * Math.min(1, dt * 6);
+  n.act.walk.setEffectiveWeight(n.walkW); n.act.idle.setEffectiveWeight(1 - n.walkW);
+  n.mixer.update(dt);
 }
 
 // ---------------------------------------------------------------- loop
@@ -1931,7 +1952,7 @@ function collide(x, z) {
   const r = .24;
   if (!walkable(x, z, r)) return true;
   for (const c of colliders) if (x > c.x0 - r && x < c.x1 + r && z > c.z0 - r && z < c.z1 + r) return true;
-  if (prof.ready && Math.hypot(x - prof.root.position.x, z - prof.root.position.z) < .55) return true;
+  for (const n of npcs) if (n.ready && Math.hypot(x - n.root.position.x, z - n.root.position.z) < .55) return true;
   return false;
 }
 function frame() {
@@ -2010,7 +2031,7 @@ function frame() {
   if (!camPos.lengthSq()) camPos.copy(want);
   camPos.lerp(want, Math.min(1, dt * 9)); camera.position.copy(camPos); camera.lookAt(tgt);
 
-  updateProf(dt);
+  for (const n of npcs) updateNPC(n, dt);
   updateGrab(dt, t);
   syncPhysics(dt);
   updateSpells(dt);
@@ -2135,7 +2156,7 @@ renderer.compileAsync(scene, camera).catch(() => {}).then(() => {
 fetch('version.json', { cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(v => {
   if (v) document.getElementById('ver').textContent = `sürüm ${v.sha.slice(0, 7)} · ${v.branch} · ${v.time}` + (LITE ? ' · hafif mod' : '');
 }).catch(() => {});
-window.__dbg = { startIntro, LITE, chooseLook, look, chooseHouse, prof, dlg, scene, camera, wiz, renderer, frame, doorState, setQuest, curtains, getDrag: () => curtainDrag, lights, interact, currentAction, grab, release, aimHit, aimItem, getHeld: () => held, fixSize: (w, h) => { camera.aspect = w / h; camera.updateProjectionMatrix(); renderer.setSize(w, h, false); composer.setSize(w, h); }, getYaw: () => yaw, setView: (y, p, d) => { yaw = y; pitch = p; dist = d; camPos.set(0, 0, 0); }, start: () => { started = true; document.getElementById('start')?.remove(); } };
+window.__dbg = { npcs, STUDENTS, updateNPC, startIntro, LITE, chooseLook, look, chooseHouse, prof, dlg, scene, camera, wiz, renderer, frame, doorState, setQuest, curtains, getDrag: () => curtainDrag, lights, interact, currentAction, grab, release, aimHit, aimItem, getHeld: () => held, fixSize: (w, h) => { camera.aspect = w / h; camera.updateProjectionMatrix(); renderer.setSize(w, h, false); composer.setSize(w, h); }, getYaw: () => yaw, setView: (y, p, d) => { yaw = y; pitch = p; dist = d; camPos.set(0, 0, 0); }, start: () => { started = true; document.getElementById('start')?.remove(); } };
 </script>
 </body>
 </html>
