@@ -647,6 +647,9 @@ const dormDoor = { open: 0, target: 0 };
 // spell classroom: north of the corridor's west end (its west wall is the castle facade); door replaces a corridor window
 const CLASS = { x0: -9, x1: -3.6, z0: 7.8, z1: 13.0 }, CD = { x0: -7.05, x1: -5.95, spring: 1.9 }, CD_XC = -6.5;
 const classDoor = { open: 0, target: 0 };
+// potions classroom: north of the corridor, between the two remaining corridor windows; door replaces the middle window
+const POT = { x0: -1.4, x1: 4.4, z0: 7.8, z1: 12.8 }, PD = { x0: .95, x1: 2.05, spring: 1.9 }, PD_XC = 1.5;
+const potDoor = { open: 0, target: 0 };
 const doorState = { open: 0, target: 0 };
 const floors = [floor];
 let doorBody = null;
@@ -717,11 +720,12 @@ const libDoor = { open: 0, target: 0 };
 stoneBox(CX1, CX1 + T, 0, H, S, LDOOR.z0);
 stoneBox(CX1, CX1 + T, 0, H, LDOOR.z1, CZ1 + T);
 { const l = solid(mesh(lintel(-LDOOR.z1, -LDOOR.z0, LDOOR.spring, H, T), stoneMat, CX1, 0, 0)); l.rotation.y = Math.PI / 2; }
-const CWIN = [-2.5, 1.5, 5.5];
+const CWIN = [-2.5, 5.5];
 {
-  // north wall: a plain piece + the classroom door opening at the west end, windows further east
-  const wx0 = CD.x1, wx1 = CX1 + T;
-  const nw = solid(mesh(wall(wx1 - wx0, CWIN.map(x => ({ cx: x - (wx0 + wx1) / 2, w: 1.3, y0: 1.0, y1: 2.7 }))), stoneMat, (wx0 + wx1) / 2, 0, CZ1));
+  // north wall: classroom door at the west end, a window, the potions-class door, another window
+  for (const [wx0, wx1] of [[CD.x1, PD.x0], [PD.x1, CX1 + T]])
+    solid(mesh(wall(wx1 - wx0, CWIN.filter(x => x > wx0 && x < wx1).map(x => ({ cx: x - (wx0 + wx1) / 2, w: 1.3, y0: 1.0, y1: 2.7 }))), stoneMat, (wx0 + wx1) / 2, 0, CZ1));
+  solid(mesh(lintel(PD.x0, PD.x1, PD.spring, H, T), stoneMat, 0, 0, CZ1));
   stoneBox(CX0 - T, CD.x0, 0, H, CZ1, CZ1 + T);
   solid(mesh(lintel(CD.x0, CD.x1, CD.spring, H, T), stoneMat, 0, 0, CZ1));
   const iron = new THREE.MeshStandardMaterial({ color: 0x2a2420, roughness: .5, metalness: .6 });
@@ -799,7 +803,7 @@ const corrFill = new THREE.PointLight(0xb8c8e8, 2.5, 9, 2); corrFill.position.se
   });
   // suits of armour between the windows
   const steel = new THREE.MeshStandardMaterial({ color: 0x9aa0a8, roughness: .28, metalness: .95 });
-  for (const x of [-4.5 + 2.0, 3.6 - 2.0]) {
+  for (const x of [-4.5 + 2.0, 3.0]) {
     const g = new THREE.Group(); g.position.set(x, 0, CZ1 - .45); g.rotation.y = Math.PI; scene.add(g);
     mesh(new THREE.BoxGeometry(.6, .12, .45), stoneMat, 0, .06, 0, g);
     for (const sx of [-1, 1]) { mesh(new THREE.CylinderGeometry(.07, .08, .8, 10), steel, sx * .11, .55, 0, g); mesh(new THREE.BoxGeometry(.13, .08, .22), steel, sx * .11, .16, .04, g); }
@@ -1532,6 +1536,105 @@ function petTheOwl() {
   sfx.swish(c); toast('Baykuş mutlu oldu!', 2000);
 }
 
+// ---- potions classroom: door "İksir Sınıfı" (E), three bubbling cauldrons with steam (E: look into one),
+// shelves of coloured bottles, a work table, an ingredients cabinet; dim greenish light
+const CAULDRONS = [
+  { x: -.2, z: 10.0, col: 0x48e070, name: 'Kazan: Gülme İksiri', line: 'Bu fokurdayan şey Gülme İksiri; fazla koklarsan üç gün boyunca her şakaya, kötü olanlara bile, kahkahayla gülersin.' },
+  { x: 1.5, z: 11.25, col: 0xa060ff, name: 'Kazan: Sessizlik Şurubu', line: 'Mor iksir Sessizlik Şurubu; ilk deneyen öğrenci bir hafta boyunca yalnızca hıçkırarak konuşabilmiş.' },
+  { x: 3.2, z: 10.0, col: 0xffa040, name: 'Kazan: Uyanıklık Çorbası', line: 'Turuncu olan Uyanıklık Çorbası; tek kaşık içen profesör bütün sınav kağıtlarını bir gecede okumuş, hem de iki kez.' },
+];
+let potPivot = null, potSeen = false;
+{
+  const { x0, x1, z0, z1 } = POT;
+  floorPlane(x0, x1, CZ1, z1, flagMat);
+  stoneBox(x0 - T, x0, 0, H, z0, z1 + T); stoneBox(x1, x1 + T, 0, H, z0, z1 + T); stoneBox(x0 - T, x1 + T, 0, H, z1, z1 + T);
+  solid(mesh(meterBox(x1 - x0 + 2 * T, .3, z1 - z0 + 2 * T), new THREE.MeshStandardMaterial({ map: ceilMap, roughness: .8, color: 0x5a6a58 }), (x0 + x1) / 2, H + .15, (z0 + z1) / 2));
+  // door (opens into the room), arch stones, plaque
+  potPivot = new THREE.Group(); potPivot.position.set(PD.x0, 0, CZ1 + T + .06); scene.add(potPivot);
+  const vt = canvasTex(256, 512, (g, w, h) => { const R = rng(67); for (let i = 0; i < 5; i++) { g.fillStyle = `hsl(${140 + R() * 20},18%,${14 + R() * 6}%)`; g.fillRect(i * w / 5, 0, w / 5, h); g.fillStyle = 'rgba(5,10,5,.8)'; g.fillRect(i * w / 5, 0, 3, h); } });
+  mesh(new THREE.ExtrudeGeometry(archPath(new THREE.Shape(), 0, 1.06, 0, PD.spring), { depth: .08, bevelEnabled: false, curveSegments: 20 }), new THREE.MeshStandardMaterial({ map: vt, roughness: .7 }), .55, 0, -.04, potPivot);
+  const ironD = new THREE.MeshStandardMaterial({ color: 0x1e1c1a, roughness: .45, metalness: .8 });
+  for (const y of [.45, 1.5]) for (const z of [-.05, .05]) mesh(new THREE.BoxGeometry(1.04, .07, .02), ironD, .55, y, z, potPivot);
+  for (const z of [-.07, .07]) mesh(new THREE.TorusGeometry(.07, .012, 8, 20), ironD, .92, .95, z, potPivot);
+  const arch = new THREE.Shape(); archPath(arch, 0, 1.4, 0, PD.spring); arch.holes.push(archPath(new THREE.Path(), 0, 1.12, 0, PD.spring));
+  const ag = new THREE.ExtrudeGeometry(arch, { depth: .1, bevelEnabled: false, curveSegments: 20 });
+  mesh(ag, stoneMat, PD_XC, 0, CZ1 - .1); mesh(ag, stoneMat, PD_XC, 0, CZ1 + T);
+  const pt = canvasTex(448, 112, (g, w, h) => {
+    g.fillStyle = '#16221a'; g.fillRect(0, 0, w, h); g.strokeStyle = '#7ac890'; g.lineWidth = 6; g.strokeRect(6, 6, w - 12, h - 12);
+    g.fillStyle = '#bff0c8'; g.font = '600 54px "Cormorant Garamond", Georgia, serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('İksir Sınıfı', w / 2, h / 2 + 4);
+  });
+  mesh(new THREE.BoxGeometry(1.26, .34, .06), woodDark, PD_XC, 2.85, CZ1 - .03);
+  const plaque = mesh(new THREE.PlaneGeometry(1.2, .3), new THREE.MeshStandardMaterial({ map: pt, roughness: .6 }), PD_XC, 2.85, CZ1 - .065); plaque.rotation.y = Math.PI; plaque.castShadow = false;
+  // cauldrons with glowing brew, bubbles and rising steam
+  const pot = new THREE.MeshStandardMaterial({ color: 0x1b1b1d, roughness: .35, metalness: .7, side: THREE.DoubleSide });
+  for (const c of CAULDRONS) {
+    const g = new THREE.Group(); g.position.set(c.x, 0, c.z); g.scale.setScalar(1.45); scene.add(g);
+    mesh(new THREE.SphereGeometry(.32, 24, 16, 0, Math.PI * 2, .55, Math.PI - .55), pot, 0, .34, 0, g);
+    mesh(new THREE.TorusGeometry(.17, .03, 8, 24), pot, 0, .62, 0, g).rotation.x = Math.PI / 2;
+    const brew = mesh(new THREE.CircleGeometry(.16, 24), new THREE.MeshStandardMaterial({ color: c.col, emissive: c.col, emissiveIntensity: 1.1, roughness: .2 }), 0, .58, 0, g); brew.rotation.x = -Math.PI / 2; brew.castShadow = false;
+    for (let i = 0; i < 3; i++) { const a = i * 2.1; mesh(new THREE.CylinderGeometry(.025, .02, .14, 6), pot, Math.cos(a) * .22, .05, Math.sin(a) * .22, g); }
+    // embers under the pot
+    const em = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0xff6a20, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: .55 })); em.position.set(c.x, .08, c.z); em.scale.setScalar(.6); scene.add(em);
+    c.steam = Array.from({ length: 9 }, (_, i) => { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: new THREE.Color(c.col).lerp(new THREE.Color(0xffffff), .55), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0 })); sp.userData.life = i / 9; scene.add(sp); return sp; });
+    c.bubbles = Array.from({ length: 4 }, () => { const b = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: c.col, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true })); b.userData = { life: Math.random(), a: 0, r: 0 }; scene.add(b); return b; });
+    c.spot = new THREE.Vector3(c.x, 0, c.z - .95);
+    box(c.x - .5, c.x + .5, c.z - .5, c.z + .5);
+  }
+  // shelves of potion bottles on the side walls
+  const R = rng(83), M = new THREE.Matrix4(), col = new THREE.Color();
+  const bottles = new THREE.InstancedMesh(new THREE.CylinderGeometry(.045, .055, .2, 10), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: .15, metalness: .1, emissive: 0x0a1a10 }), 120);
+  const necks = new THREE.InstancedMesh(new THREE.CylinderGeometry(.018, .022, .07, 8), new THREE.MeshStandardMaterial({ color: 0x8a6a40, roughness: .8 }), 120);
+  const PCOLS = [0x40d070, 0xa060ff, 0xff8a30, 0x30a0ff, 0xff4070, 0xe0e040, 0x60f0e0];
+  let nb = 0;
+  for (const [sx, dir] of [[x0 + .2, 1], [x1 - .2, -1]]) for (const sz of [8.9, 11.4]) {
+    for (const y of [.9, 1.45, 2.0]) {
+      mesh(new THREE.BoxGeometry(.32, .04, 1.9), woodDark, sx, y, sz);
+      for (let k = 0; k < 10; k++) { if (R() < .2) continue; const bz = sz - .85 + k * .19, sc = .8 + R() * .6; M.makeScale(sc, sc, sc).setPosition(sx + dir * (R() - .5) * .08, y + .02 + .1 * sc, bz); bottles.setMatrixAt(nb, M); bottles.setColorAt(nb, col.setHex(PCOLS[(R() * PCOLS.length) | 0])); M.makeScale(sc, sc, sc).setPosition(sx + dir * (R() - .5) * .08, y + .02 + .23 * sc, bz); necks.setMatrixAt(nb++, M); }
+    }
+    for (const lz of [-.95, .95]) mesh(new THREE.BoxGeometry(.3, 2.15, .04), woodDark, sx, 1.07, sz + lz);
+    box(Math.min(sx, sx - dir * .2) - .16, Math.max(sx, sx - dir * .2) + .16, sz - 1, sz + 1);
+  }
+  bottles.count = necks.count = nb; for (const im of [bottles, necks]) { im.castShadow = true; scene.add(im); }
+  // work table (north wall) with mortar, scale, an open book and a few flasks
+  const tg = new THREE.Group(); tg.position.set(.3, 0, z1 - .55); scene.add(tg);
+  solid(mesh(new RoundedBoxGeometry(1.9, .07, .7, 2, .02), woodMid, 0, .82, 0, tg));
+  for (const [lx, lz] of [[-.85, -.28], [.85, -.28], [-.85, .28], [.85, .28]]) solid(mesh(new THREE.BoxGeometry(.07, .8, .07), woodDark, lx, .4, lz, tg));
+  const stone = new THREE.MeshStandardMaterial({ color: 0x8a8680, roughness: .8 });
+  mesh(new THREE.CylinderGeometry(.11, .08, .12, 16), stone, -.6, .92, 0, tg); const pestle = mesh(new THREE.CylinderGeometry(.02, .03, .22, 8), stone, -.56, 1.0, .02, tg); pestle.rotation.z = .5;
+  mesh(new THREE.BoxGeometry(.4, .03, .3), new THREE.MeshStandardMaterial({ color: 0xe8d8b0, roughness: .9 }), 0, .87, .05, tg).rotation.y = -.15;
+  for (const [fx, c] of [[.45, 0x48e070], [.6, 0xff4070], [.72, 0x30a0ff]]) { mesh(new THREE.SphereGeometry(.07, 14, 10), new THREE.MeshStandardMaterial({ color: c, roughness: .1, emissive: c, emissiveIntensity: .35 }), fx, .93, -.1, tg); mesh(new THREE.CylinderGeometry(.02, .02, .1, 8), new THREE.MeshStandardMaterial({ color: 0xd8e8e0, roughness: .2 }), fx, 1.04, -.1, tg); }
+  box(.3 - 1.0, .3 + 1.0, z1 - .95, z1);
+  // ingredients cabinet (north-east corner): drawers, glass doors, jars on top
+  const cg = new THREE.Group(); cg.position.set(x1 - .7, 0, z1 - .3); scene.add(cg);
+  solid(mesh(new THREE.BoxGeometry(1.2, 2.3, .55), woodDark, 0, 1.15, 0, cg));
+  const knob = new THREE.MeshStandardMaterial({ color: 0xc8963a, roughness: .35, metalness: .85 });
+  for (let r = 0; r < 4; r++) for (let c2 = 0; c2 < 3; c2++) { mesh(new THREE.BoxGeometry(.34, .18, .02), woodMid, -.38 + c2 * .38, .3 + r * .22, -.285, cg); mesh(new THREE.SphereGeometry(.02, 8, 6), knob, -.38 + c2 * .38, .3 + r * .22, -.3, cg); }
+  for (const dx of [-.29, .29]) mesh(new THREE.BoxGeometry(.54, .9, .02), new THREE.MeshStandardMaterial({ color: 0x3a5a48, roughness: .1, metalness: .2, transparent: true, opacity: .45 }), dx, 1.55, -.285, cg);
+  for (const [jx, c] of [[-.4, 0x6a8a3a], [0, 0x8a3a5a], [.38, 0x3a6a8a]]) mesh(new THREE.CylinderGeometry(.09, .09, .22, 12), new THREE.MeshStandardMaterial({ color: c, roughness: .3 }), jx, 2.42, 0, cg);
+  box(x1 - 1.35, x1, z1 - .6, z1);
+  // dim greenish light
+  const gl = new THREE.PointLight(0x7dffa0, 4.5, 9, 2); gl.position.set(1.5, 2.6, 10.3); scene.add(gl); window.__potLight = gl;
+}
+function updatePotions(t, dt, p) {
+  potDoor.open += (potDoor.target - potDoor.open) * Math.min(1, dt * 3.2);
+  potPivot.rotation.y = -potDoor.open * 1.75;
+  window.__potLight.intensity = 4.5 + Math.sin(t * 2.3) * .4 + Math.sin(t * 7.1) * .2;
+  for (const c of CAULDRONS) {
+    for (const sp of c.steam) {
+      const u = sp.userData; u.life += dt * .32; if (u.life > 1) { u.life -= 1; u.ox = (Math.random() - .5) * .2; u.oz = (Math.random() - .5) * .2; }
+      const l = u.life;
+      sp.position.set(c.x + (u.ox || 0) + Math.sin(t * .9 + l * 6) * .08 * l, .9 + l * 1.5, c.z + (u.oz || 0));
+      sp.scale.setScalar(.25 + l * .7); sp.material.opacity = Math.sin(l * Math.PI) * .16;
+    }
+    for (const b of c.bubbles) {
+      const u = b.userData; u.life += dt * 1.6; if (u.life > 1) { u.life = 0; u.a = Math.random() * 6.3; u.r = Math.random() * .17; }
+      b.position.set(c.x + Math.cos(u.a) * u.r, .85 + u.life * .12, c.z + Math.sin(u.a) * u.r);
+      b.scale.setScalar(.07 * (1 - u.life * .4)); b.material.opacity = (1 - u.life) * .9;
+    }
+  }
+  if (!potSeen && p.z > POT.z0 + .3 && p.x > POT.x0 && p.x < POT.x1) { potSeen = true; sfx.chime(); toast('İksir Sınıfı', 2600); }
+}
+
 // ---- where the wizard may stand (union of rectangles) ----
 const zones = [
   { x0: -S, x1: S, z0: -S, z1: S },                                      // dormitory
@@ -1547,6 +1650,8 @@ const zones = [
   { x0: DORM.x0, x1: DORM.x1, z0: DORM.z0, z1: DORM.z1 },                // house dormitory
   { x0: CD.x0, x1: CD.x1, z0: CZ1 - .6, z1: CZ1 + T + .6, mz: 0, gate: classDoor }, // classroom door
   { x0: CLASS.x0, x1: CLASS.x1, z0: CLASS.z0, z1: CLASS.z1 },            // spell classroom
+  { x0: PD.x0, x1: PD.x1, z0: CZ1 - .6, z1: CZ1 + T + .6, mz: 0, gate: potDoor }, // potions class door
+  { x0: POT.x0, x1: POT.x1, z0: POT.z0, z1: POT.z1 },                    // potions classroom
   // (the owlery stands inside the terrace rectangle: its ring of colliders + owlDoorBox keep you out of the walls)
 ];
 function walkable(x, z, r) {
@@ -1671,6 +1776,12 @@ const sfx = (() => {
     (function hallCrackle() {
       if (ctx.state === 'running' && Math.random() < .6) noise(hp, ctx.currentTime, .01 + Math.random() * .02, { type: 'highpass', f: 2500 + Math.random() * 3000, gain: .05 + Math.random() * .08, attack: .001 });
       setTimeout(hallCrackle, 90 + Math.random() * 380);
+    })();
+    // potions class: three cauldrons bubbling
+    const pp = at(new THREE.Vector3(PD_XC, .9, 10.5), 1.0);
+    (function blub2() {
+      if (ctx.state === 'running') { const f = 140 + Math.random() * 200; tone(pp, ctx.currentTime, .1, { f, f2: f * 2.4, gain: .06 }); }
+      setTimeout(blub2, 180 + Math.random() * 520);
     })();
     // cauldron bubbles
     const cp = at(new THREE.Vector3(2.55, .6, 2.05), .7);
@@ -2199,6 +2310,7 @@ function nearWand() { return !hasWand && wiz.root.position.distanceTo(new THREE.
 const lights = { fire: 1, fireT: 1, desk: 1, deskT: 1, cand: 1, candT: 1, curt: 0, curtT: 0 };
 const FIRE_SPOT = new THREE.Vector3(S - 1.15, 0, .2), WIN_SPOT = new THREE.Vector3(WIN.cx, 0, -S + .7), DESK_SPOT = new THREE.Vector3(-2.7, 0, 1.1);
 const DOOR_SPOT_IN = new THREE.Vector3(-1.5, 0, S - .7), DOOR_SPOT_OUT = new THREE.Vector3(-1.5, 0, S + T + .7);
+const POT_OUT = new THREE.Vector3(PD_XC, 0, CZ1 - .7), POT_IN = new THREE.Vector3(PD_XC, 0, CZ1 + T + .7);
 const CLASS_OUT = new THREE.Vector3(CD_XC, 0, CZ1 - .7), CLASS_IN = new THREE.Vector3(CD_XC, 0, CZ1 + T + .7);
 const DORM_OUT = new THREE.Vector3(DD_XC, 0, S + T + .7), DORM_IN = new THREE.Vector3(DD_XC, 0, S - .7);
 const HALL_OUT = new THREE.Vector3(HD_XC, 0, S + T + .7), HALL_IN = new THREE.Vector3(HD_XC, 0, S - .7);
@@ -2224,6 +2336,14 @@ function currentAction() {
     owlDoor.target = owlDoor.target ? 0 : 1; sfx.door(new THREE.Vector3(OWL.cx, 1.2, OWL.cz - OWL.rIn), owlDoor.target);
   } };
   if (near(petOwl.spot, .9)) return { label: 'Baykuşu sev', run: () => { faceTo(petOwl.o.position); playOnce('use'); petTheOwl(); } };
+  if (near(POT_OUT, 1.3) || near(POT_IN, 1.3)) return { label: potDoor.target ? 'İksir Sınıfı kapısını kapat' : 'İksir Sınıfı kapısını aç', run: () => {
+    faceTo(new THREE.Vector3(PD_XC, 0, CZ1 + T / 2)); playOnce('use');
+    potDoor.target = potDoor.target ? 0 : 1; sfx.door(new THREE.Vector3(PD_XC, 1.2, CZ1 + T / 2), potDoor.target);
+  } };
+  if (!dlg.open) for (const c of CAULDRONS) if (near(c.spot, .9)) return { label: 'Kazana bak', run: () => {
+    faceTo(new THREE.Vector3(c.x, 0, c.z)); playOnce('use'); sfx.ignite(new THREE.Vector3(c.x, .9, c.z));
+    openDialog('cauldron', c.name, [c.line]); dlg.at = c.spot;
+  } };
   if (near(CLASS_OUT, 1.3) || near(CLASS_IN, 1.3)) return { label: classDoor.target ? 'Derslik kapısını kapat' : 'Derslik kapısını aç', run: () => {
     faceTo(new THREE.Vector3(CD_XC, 0, CZ1 + T / 2)); playOnce('use');
     classDoor.target = classDoor.target ? 0 : 1; sfx.door(new THREE.Vector3(CD_XC, 1.2, CZ1 + T / 2), classDoor.target);
@@ -2549,6 +2669,7 @@ const prof = makeNPC({
 });
 // corridor students, one per house (the player's own house among them or not); they keep clear of the dormitory door
 const STUDENT_BOX = { x0: CX0 + 1, x1: CX1 - 1, z0: CZ0 + .55, z1: CZ1 - .6 }, DOOR_CLEAR = { x0: -2.6, x1: -.4, z0: CZ0, z1: CZ0 + 1.3 };
+const POT_CLEAR = { x0: PD.x0 - .5, x1: PD.x1 + .5, z0: CZ1 - 1.3, z1: CZ1 };
 const CLASS_CLEAR = { x0: CD.x0 - .5, x1: CD.x1 + .5, z0: CZ1 - 1.3, z1: CZ1 };
 const DORM_CLEAR = { x0: DD.x0 - .5, x1: DD.x1 + .5, z0: CZ0, z1: CZ0 + 1.3 };
 const HALL_CLEAR = { x0: HD.x0 - .4, x1: HD.x1 + .4, z0: CZ0, z1: CZ0 + 1.3 }, SEAT_Y = .3;
@@ -2559,7 +2680,7 @@ const STUDENTS = [
   { house: 'porsuk', ten: 'esmer', sac: 'siyah', name: 'Mert Toprakçı', pos: [4.6, 0, 5], line: 'Acıkırsan söyle; mutfaktaki ev cinleri Porsuklara hep fazladan kurabiye verir.' },
   // sits on a Great Hall bench facing the table
   { house: 'yilan', ten: 'koyu', sac: 'kizil', name: 'Selin Ayaz', pos: [-7.36, SEAT_Y, .9], seated: -Math.PI / 2, line: 'Tavana bak: gerçek gökyüzünü gösterir. Yağmur yağarsa çorbana damla düşmesin diye önce şemsiye büyüsünü öğren!' },
-].map(st => ({ ...st, npc: makeNPC({ name: `${st.name} · ${HOUSES[st.house].name}`, title: `${st.name.split(' ')[0]} ile konuş`, pos: st.pos, box: STUDENT_BOX, speed: .55, lines: [st.line], avoid: [DOOR_CLEAR, LIB_CLEAR, HALL_CLEAR, DORM_CLEAR, CLASS_CLEAR], seated: st.seated }) }));
+].map(st => ({ ...st, npc: makeNPC({ name: `${st.name} · ${HOUSES[st.house].name}`, title: `${st.name.split(' ')[0]} ile konuş`, pos: st.pos, box: STUDENT_BOX, speed: .55, lines: [st.line], avoid: [DOOR_CLEAR, LIB_CLEAR, HALL_CLEAR, DORM_CLEAR, CLASS_CLEAR, POT_CLEAR], seated: st.seated }) }));
 
 // shared dialogue box: who = 'npc' (dlg.npc = the speaker) or 'intro' (headmaster's welcome after the start screen)
 const dlg = { open: false, i: 0, timer: 0, who: null, lines: [], onEnd: null };
@@ -2837,6 +2958,7 @@ function frame() {
   updatePractice(t, dt, p);
   updateStars(t);
   updateOwls(t, dt, p);
+  updatePotions(t, dt, p);
   classDoor.open += (classDoor.target - classDoor.open) * Math.min(1, dt * 3.2);
   classPivot.rotation.y = -classDoor.open * 1.75;
   if (!classSeen && p.z > CLASS.z0 + .3 && p.x < CLASS.x1 && p.x > CLASS.x0) { classSeen = true; sfx.chime(); toast('Büyü Sınıfı', 2600); }
@@ -2946,7 +3068,7 @@ renderer.compileAsync(scene, camera).catch(() => {}).then(() => {
 fetch('version.json', { cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(v => {
   if (v) document.getElementById('ver').textContent = `sürüm ${v.sha.slice(0, 7)} · ${v.branch} · ${v.time}` + (LITE ? ' · hafif mod' : '');
 }).catch(() => {});
-window.__dbg = { sfx, toggleSound, owlDoor, OWL, owls, petOwl: () => petOwl, STARS, starState, collide: (x, z) => collide(x, z), walkable, classDoor, CLASS_BOARD_SPOT, dummies, practice, castSpell, giveWand: () => { hasWand = true; }, dormDoor, BED_SPOT, isResting: () => resting, hallDoor, completeQuest, getQuest: () => Q[quest].id, libDoor, LIB_BOOKS, npcs, STUDENTS, updateNPC, startIntro, LITE, chooseLook, look, chooseHouse, prof, dlg, scene, camera, wiz, renderer, frame, doorState, setQuest, curtains, getDrag: () => curtainDrag, lights, interact, currentAction, grab, release, aimHit, aimItem, getHeld: () => held, fixSize: (w, h) => { camera.aspect = w / h; camera.updateProjectionMatrix(); renderer.setSize(w, h, false); composer.setSize(w, h); }, getYaw: () => yaw, setView: (y, p, d) => { yaw = y; pitch = p; dist = d; camPos.set(0, 0, 0); }, start: () => { started = true; document.getElementById('start')?.remove(); } };
+window.__dbg = { potDoor, CAULDRONS, sfx, toggleSound, owlDoor, OWL, owls, petOwl: () => petOwl, STARS, starState, collide: (x, z) => collide(x, z), walkable, classDoor, CLASS_BOARD_SPOT, dummies, practice, castSpell, giveWand: () => { hasWand = true; }, dormDoor, BED_SPOT, isResting: () => resting, hallDoor, completeQuest, getQuest: () => Q[quest].id, libDoor, LIB_BOOKS, npcs, STUDENTS, updateNPC, startIntro, LITE, chooseLook, look, chooseHouse, prof, dlg, scene, camera, wiz, renderer, frame, doorState, setQuest, curtains, getDrag: () => curtainDrag, lights, interact, currentAction, grab, release, aimHit, aimItem, getHeld: () => held, fixSize: (w, h) => { camera.aspect = w / h; camera.updateProjectionMatrix(); renderer.setSize(w, h, false); composer.setSize(w, h); }, getYaw: () => yaw, setView: (y, p, d) => { yaw = y; pitch = p; dist = d; camPos.set(0, 0, 0); }, start: () => { started = true; document.getElementById('start')?.remove(); } };
 </script>
 </body>
 </html>
