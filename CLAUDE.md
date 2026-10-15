@@ -25,7 +25,7 @@ Keep each change small and testable; if a request is large, split it and say wha
 - room (walls via `wall()`, window `WIN`, curtains), lights (`sun` follows the player, `hemi`, `winFill`, god-ray `rayMat`)
 - furniture (bed, trunk, desk, wand, fireplace `FIRE`, cauldron, bookshelf, banner, rug, floating candles, dust)
 - castle (door `doorState`, corridor `CX0..CX1 / CZ0..CZ1`, terrace `TX0..TX1 / TZ0..TZ1`, library east of the corridor (`libDoor`, `LIB_BOOKS`, `CX1+T..LX1 / LZ0..LZ1`), Great Hall south of the corridor (`HALL`, `hallDoor`, `updateHall()`), house dormitory east of the tower room (`DORM`, `dormDoor`, `paintDorm()`, `rest()`), spell-practice targets on the terrace (`dummies`, `hitDummy()`, `updatePractice()`), spell classroom north of the corridor (`CLASS`, `classDoor`, `BOARD_LINES`), owlery in the terrace's north-east corner (`OWL`, `owlDoor`, `owls`, `updateOwls()`; round walls = ring of `box()` colliders + `owlDoorBox`), sky dome, distant towers, clouds) and **`zones` + `walkable()`**: the wizard may only stand inside these rectangles — extend `zones` when adding walkable space (a zone with `gate: <door state>` is only walkable while that door is open), and `box()` adds rectangular obstacles
-- sound (`sfx`, all procedural Web Audio, positional)
+- sound (`sfx`, all procedural Web Audio, positional; `star`, `fanfare`, `dialog`, `hit`, …; mute button `#snd` / M key, localStorage `buyucu-ses`)
 - physics (`world`; meshes tagged with `solid()` become static boxes, `loose(mesh, kg, kind)` or `userData.dynGroup` become movable objects)
 - character (KayKit Mage GLB restyled; `wiz.act` animations, `playOnce()` for one-shots)
 - collectible stars (`STARS`, `collectStar()`, localStorage `buyucu-yildizlar`)

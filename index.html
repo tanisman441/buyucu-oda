@@ -34,6 +34,8 @@
   #stars{font-family:Nunito,sans-serif;font-weight:700;font-size:17px;color:#ffd770;margin:8px 0 0 35px;text-shadow:0 0 8px rgba(255,200,80,.5)}
   #tscore{font-family:Nunito,sans-serif;font-weight:700;font-size:17px;color:#f5c76a;margin:10px 0 0 35px;opacity:0;transition:opacity .4s}
   #tscore.on{opacity:.95}
+  #snd{position:fixed;right:16px;top:14px;z-index:8;width:44px;height:44px;border-radius:50%;border:1.5px solid rgba(244,239,228,.45);background:rgba(18,12,8,.45);color:#f4efe4;font-size:20px;line-height:1;cursor:pointer;backdrop-filter:blur(4px)}
+  #snd:hover{border-color:#f5c76a}
   #toast{position:fixed;top:42%;left:50%;transform:translate(-50%,-50%);font-family:'Cormorant Garamond',serif;font-size:34px;color:#fff6e2;text-shadow:0 2px 18px rgba(0,0,0,.6);opacity:0;transition:opacity .6s;pointer-events:none;text-align:center}
   #start{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:radial-gradient(ellipse at center,rgba(20,12,6,.35),rgba(5,3,2,.85));color:#f4efe4;cursor:pointer;transition:opacity .6s}
   #start h1{font-family:'Cormorant Garamond',serif;font-weight:500;font-size:64px;margin:0;letter-spacing:1px}
@@ -80,6 +82,7 @@
 <div id="hint"><span class="key" id="hKey">Tab</span><span id="hText">Bölümün hedeflerini görmek için bas</span></div>
 <div id="toast"></div>
 <div id="fade"></div>
+<button id="snd" title="Sesi aç/kapat (M)" aria-label="Sesi aç/kapat">🔊</button>
 <div id="dlg"><b id="dlgName"></b><span id="dlgText"></span><small id="dlgMore"></small></div>
 <div id="ver">yerel sürüm</div>
 <div id="cross"></div>
@@ -100,6 +103,7 @@
     <span><b class="key">F</b> Lumos</span>
     <span><b class="key">Sol tık / Q</b> güç topu</span>
     <span><b class="key">Sağ tık (basılı)</b> eşyayı tut, taşı</span>
+    <span><b class="key">M</b> ses aç/kapat</span>
   </div>
 </div>
 <div id="load">Oda hazırlanıyor…</div>
@@ -1317,13 +1321,13 @@ function hitDummy(pt, obj) {
   if (k === undefined) { let best = .55; dummies.forEach((d, i) => { const dd = d.center.distanceTo(pt); if (dd < best) { best = dd; k = i; } }); }
   const d = dummies[k];
   if (!d || d.state !== 'up') return;
-  d.state = 'falling'; d.t = 0;
+  d.state = 'falling'; d.t = 0; sfx.hit(d.center);
   for (let i = 0; i < 22; i++) spark(d.center, new THREE.Vector3((Math.random() - .5) * 2, Math.random() * 1.6, -Math.random() * 1.5), .5 + Math.random() * .4, .035, i % 2 ? 0xe8c870 : 0xfff2c8);
   practice.score++;
   document.getElementById('tscore').textContent = `Hedefler: ${practice.score}/${dummies.length}`;
   if (practice.score < dummies.length) toast('İsabet!', 1100);
   else {
-    toast('✦ Talim tamamlandı! ✦<br><span style="font-size:22px;opacity:.85">Hedefler birazdan yeniden dikilecek</span>', 3600); sfx.chime();
+    toast('✦ Talim tamamlandı! ✦<br><span style="font-size:22px;opacity:.85">Hedefler birazdan yeniden dikilecek</span>', 3600); sfx.fanfare();
     const c = wiz.root.position.clone().setY(1.2);
     for (let i = 0; i < 36; i++) { const a = Math.random() * 6.28; spark(c.clone(), new THREE.Vector3(Math.cos(a) * (.6 + Math.random()), 1 + Math.random() * 1.6, Math.sin(a) * (.6 + Math.random())), 1.2 + Math.random() * .8, .05, 0xffd070); }
     practice.resetAt = clock.elapsedTime + 4.5;
@@ -1615,11 +1619,13 @@ const dust = (() => {
 // ---------------------------------------------------------------- sound (all procedural, Web Audio)
 const sfx = (() => {
   let ctx = null, master, noiseBuf, last = {}, fireGain = null, fireLevel = 1, windGain = null, windLevel = 0;
+  let muted = false; try { muted = localStorage.getItem('buyucu-ses') === 'kapali'; } catch (e) {}
+  const VOL = .8;
   const P = v => ({ x: v.x, y: v.y, z: v.z });
   function init() {
     if (ctx) { ctx.resume(); return; }
     ctx = new (window.AudioContext || window.webkitAudioContext)();
-    master = ctx.createGain(); master.gain.value = .9;
+    master = ctx.createGain(); master.gain.value = muted ? 0 : VOL;
     const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 4;
     master.connect(comp).connect(ctx.destination);
     noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
@@ -1660,6 +1666,12 @@ const sfx = (() => {
     // quiet room tone / wind against the tower
     const wind = noise(master, t, 1e5, { type: 'bandpass', f: 260, q: .7, gain: .025, attack: 2, loop: true }); windGain = wind;
     wind.gain.cancelScheduledValues(t); wind.gain.setValueAtTime(0, t); wind.gain.linearRampToValueAtTime(.025, t + 3);
+    // Great Hall: soft crackle from the floating candles
+    const hp = at(new THREE.Vector3(HD_XC, 3.2, -.2), 2.2);
+    (function hallCrackle() {
+      if (ctx.state === 'running' && Math.random() < .6) noise(hp, ctx.currentTime, .01 + Math.random() * .02, { type: 'highpass', f: 2500 + Math.random() * 3000, gain: .05 + Math.random() * .08, attack: .001 });
+      setTimeout(hallCrackle, 90 + Math.random() * 380);
+    })();
     // cauldron bubbles
     const cp = at(new THREE.Vector3(2.55, .6, 2.05), .7);
     (function blub() {
@@ -1694,8 +1706,9 @@ const sfx = (() => {
     },
     cast(pos) {
       if (!ctx) return; const t = ctx.currentTime, d = at(pos);
-      noise(d, t, .35, { type: 'bandpass', f: 600, f2: 3200, q: 2, gain: .35, attack: .02 });
-      tone(d, t, .3, { f: 660, f2: 1320, type: 'triangle', gain: .07 });
+      noise(d, t, .55, { type: 'bandpass', f: 2600, f2: 420, q: 1.6, gain: .28, attack: .04 });   // "vuuuş"
+      noise(d, t, .3, { type: 'bandpass', f: 600, f2: 2400, q: 2, gain: .12, attack: .02 });
+      tone(d, t, .4, { f: 520, f2: 260, type: 'triangle', gain: .05 });
     },
     hum(pos) { // short whoosh while the orb flies
       if (!ctx || !ok('hum', 90)) return; noise(at(pos, .8), ctx.currentTime, .12, { type: 'bandpass', f: 1400 + Math.random() * 600, q: 3, gain: .05 });
@@ -1756,6 +1769,34 @@ const sfx = (() => {
     drop(pos) {
       if (!ctx) return; const t = ctx.currentTime, d = at(pos);
       tone(d, t, .3, { f: 600, f2: 280, type: 'triangle', gain: .06 });
+    },
+    // collectible star: a bright little bell with a sparkle on top
+    star(pos) {
+      if (!ctx) return; const t = ctx.currentTime, d = at(pos);
+      [1319, 1760, 2637].forEach((f, i) => { tone(d, t + i * .06, 1.1, { f, type: 'sine', gain: .07 }); tone(d, t + i * .06, .5, { f: f * 2.01, type: 'sine', gain: .02 }); });
+      noise(d, t, .6, { type: 'highpass', f: 7000, gain: .04, attack: .03 });
+    },
+    // quest / practice / all-stars completed: short happy arpeggio resolving on a soft chord
+    fanfare() {
+      if (!ctx) return; const t = ctx.currentTime;
+      [523, 659, 784, 1047].forEach((f, i) => tone(master, t + i * .1, .5, { f, type: 'triangle', gain: .07 }));
+      [523, 659, 784].forEach(f => tone(master, t + .45, 1.4, { f: f * 2, type: 'sine', gain: .035, attack: .03 }));
+    },
+    // dialogue box opens: two soft notes
+    dialog() {
+      if (!ctx || !ok('dlg', 250)) return; const t = ctx.currentTime;
+      tone(master, t, .35, { f: 587, type: 'sine', gain: .045 }); tone(master, t + .08, .5, { f: 880, type: 'sine', gain: .04 });
+    },
+    // a practice target is hit: dry straw/wood crack + a high ping
+    hit(pos) {
+      if (!ctx) return; const t = ctx.currentTime, d = at(pos, 1.6);
+      noise(d, t, .07, { type: 'bandpass', f: 1600, q: 1.2, gain: .45, attack: .001 }); noise(d, t + .01, .18, { type: 'lowpass', f: 900, gain: .2, attack: .002 });
+      tone(d, t + .02, .6, { f: 2093, type: 'sine', gain: .08 }); tone(d, t + .02, .45, { f: 3136, type: 'sine', gain: .035 });
+    },
+    get muted() { return muted; },
+    setMuted(v) {
+      muted = v; try { localStorage.setItem('buyucu-ses', v ? 'kapali' : 'acik'); } catch (e) {}
+      if (ctx) { master.gain.cancelScheduledValues(ctx.currentTime); master.gain.setTargetAtTime(v ? 0 : VOL, ctx.currentTime, .08); }
     },
     chime() {
       if (!ctx) return; const t = ctx.currentTime;
@@ -2072,6 +2113,7 @@ addEventListener('keydown', e => {
   if (!started) { if ((e.code === 'Enter' || e.code === 'NumpadEnter') && e.target.tagName !== 'BUTTON') startGame(); return; }
   if (e.code.startsWith('Arrow')) e.preventDefault();
   if (e.code === 'Escape' && dlg.open) closeDialog();
+  if (e.code === 'KeyM') toggleSound();
   if (e.code === 'Tab') { e.preventDefault(); document.getElementById('goals').classList.add('on'); }
   if (e.code === 'KeyE') interact();
   if (e.code === 'KeyF') toggleLumos();
@@ -2079,6 +2121,14 @@ addEventListener('keydown', e => {
   if (e.code === 'Space') { e.preventDefault(); if (started && !airborne) { airborne = true; jumpV = 3.9; sfx.jump(wiz.root.position); } }
   sfx.init();
 });
+function toggleSound() {
+  sfx.init(); sfx.setMuted(!sfx.muted); syncSoundBtn();
+  toast(sfx.muted ? 'Ses kapalı' : 'Ses açık', 1000);
+}
+function syncSoundBtn() { const b = document.getElementById('snd'); b.textContent = sfx.muted ? '🔇' : '🔊'; b.title = (sfx.muted ? 'Sesi aç' : 'Sesi kapat') + ' (M)'; }
+document.getElementById('snd').addEventListener('click', e => { e.stopPropagation(); toggleSound(); e.currentTarget.blur(); });
+document.getElementById('snd').addEventListener('mousedown', e => e.stopPropagation());
+syncSoundBtn();
 addEventListener('keyup', e => { keys[e.code] = false; if (e.code === 'Tab') document.getElementById('goals').classList.remove('on'); });
 const cvs = renderer.domElement;
 if (house) chooseHouse(house);
@@ -2133,12 +2183,12 @@ function showGoals(ms) {
 function completeQuest(id) {
   if (Q[quest].id !== id) return;
   const done = Q[quest];
-  setQuest(quest + 1); sfx.chime();
+  setQuest(quest + 1); sfx.fanfare();
   toast(`Görev tamamlandı!<br><span style="font-size:22px;opacity:.85">${done.title}</span>`, 2600);
   showGoals(4000);
   if (Q[quest].id === 'free') setTimeout(() => {
     toast('✦ Okula hoş geldin, artık özgürsün! ✦<br><span style="font-size:22px;opacity:.85">Şatoyu dilediğince keşfet</span>', 5000);
-    sfx.chime(); document.getElementById('qTitle').textContent = 'Bulut Kulesi';
+    sfx.fanfare(); document.getElementById('qTitle').textContent = 'Bulut Kulesi';
     const c = wiz.root.position.clone().setY(1.2);
     for (let i = 0; i < 40; i++) { const a = Math.random() * 6.28; spark(c.clone(), new THREE.Vector3(Math.cos(a) * (.6 + Math.random()), 1 + Math.random() * 1.6, Math.sin(a) * (.6 + Math.random())), 1.2 + Math.random() * .8, .05, 0xffd070); }
   }, 2900);
@@ -2561,7 +2611,7 @@ function talkTo(n) {
 function openDialog(who, name, lines, onEnd, npc = null) {
   Object.assign(dlg, { open: true, i: -1, who, lines, onEnd, npc, at: null });
   document.getElementById('dlgName').textContent = name;
-  nextLine(); sfx.chime();
+  nextLine(); sfx.dialog();
 }
 function closeDialog() {
   dlg.open = false; document.getElementById('dlg').classList.remove('on');
@@ -2648,10 +2698,10 @@ function collectStar(k) {
   const g = starState.meshes[k]; starState.got.add(k); g.visible = false;
   try { localStorage.setItem('buyucu-yildizlar', JSON.stringify([...starState.got])); } catch (e) {}
   for (let i = 0; i < 18; i++) spark(g.position, new THREE.Vector3().randomDirection().multiplyScalar(.9 + Math.random()), .5 + Math.random() * .4, .04, i % 2 ? 0xffd070 : 0xfff6d0);
-  sfx.pickup(g.position); updateStarHud();
+  sfx.star(g.position); updateStarHud();
   if (starState.got.size < STARS.length) toast(`★ Yıldız toplandı! <span style="font-size:24px;opacity:.85">${starState.got.size}/${STARS.length}</span>`, 1500);
   else {
-    toast('✦ Tüm yıldızları topladın! ✦<br><span style="font-size:22px;opacity:.85">Okulun her köşesini keşfettin</span>', 5000); sfx.chime();
+    toast('✦ Tüm yıldızları topladın! ✦<br><span style="font-size:22px;opacity:.85">Okulun her köşesini keşfettin</span>', 5000); sfx.fanfare();
     const c = wiz.root.position.clone().setY(1.2);
     for (let i = 0; i < 44; i++) { const a = Math.random() * 6.28; spark(c.clone(), new THREE.Vector3(Math.cos(a) * (.6 + Math.random()), 1 + Math.random() * 1.8, Math.sin(a) * (.6 + Math.random())), 1.2 + Math.random() * .9, .05, 0xffd070); }
   }
@@ -2896,7 +2946,7 @@ renderer.compileAsync(scene, camera).catch(() => {}).then(() => {
 fetch('version.json', { cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(v => {
   if (v) document.getElementById('ver').textContent = `sürüm ${v.sha.slice(0, 7)} · ${v.branch} · ${v.time}` + (LITE ? ' · hafif mod' : '');
 }).catch(() => {});
-window.__dbg = { owlDoor, OWL, owls, petOwl: () => petOwl, STARS, starState, collide: (x, z) => collide(x, z), walkable, classDoor, CLASS_BOARD_SPOT, dummies, practice, castSpell, giveWand: () => { hasWand = true; }, dormDoor, BED_SPOT, isResting: () => resting, hallDoor, completeQuest, getQuest: () => Q[quest].id, libDoor, LIB_BOOKS, npcs, STUDENTS, updateNPC, startIntro, LITE, chooseLook, look, chooseHouse, prof, dlg, scene, camera, wiz, renderer, frame, doorState, setQuest, curtains, getDrag: () => curtainDrag, lights, interact, currentAction, grab, release, aimHit, aimItem, getHeld: () => held, fixSize: (w, h) => { camera.aspect = w / h; camera.updateProjectionMatrix(); renderer.setSize(w, h, false); composer.setSize(w, h); }, getYaw: () => yaw, setView: (y, p, d) => { yaw = y; pitch = p; dist = d; camPos.set(0, 0, 0); }, start: () => { started = true; document.getElementById('start')?.remove(); } };
+window.__dbg = { sfx, toggleSound, owlDoor, OWL, owls, petOwl: () => petOwl, STARS, starState, collide: (x, z) => collide(x, z), walkable, classDoor, CLASS_BOARD_SPOT, dummies, practice, castSpell, giveWand: () => { hasWand = true; }, dormDoor, BED_SPOT, isResting: () => resting, hallDoor, completeQuest, getQuest: () => Q[quest].id, libDoor, LIB_BOOKS, npcs, STUDENTS, updateNPC, startIntro, LITE, chooseLook, look, chooseHouse, prof, dlg, scene, camera, wiz, renderer, frame, doorState, setQuest, curtains, getDrag: () => curtainDrag, lights, interact, currentAction, grab, release, aimHit, aimItem, getHeld: () => held, fixSize: (w, h) => { camera.aspect = w / h; camera.updateProjectionMatrix(); renderer.setSize(w, h, false); composer.setSize(w, h); }, getYaw: () => yaw, setView: (y, p, d) => { yaw = y; pitch = p; dist = d; camPos.set(0, 0, 0); }, start: () => { started = true; document.getElementById('start')?.remove(); } };
 </script>
 </body>
 </html>
