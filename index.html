@@ -54,6 +54,8 @@
   #looks button.sel{border-color:#f5c76a;box-shadow:0 0 10px rgba(245,199,106,.45)}
   #startTxt{margin-top:14px;padding:10px 34px;border-radius:22px;border:2px solid #f5c76a;background:rgba(245,199,106,.2);color:#fff6e2;font:700 18px Nunito,sans-serif;cursor:pointer}
   #startTxt:hover,#startTxt:focus{background:rgba(245,199,106,.38);outline:none;box-shadow:0 0 14px rgba(245,199,106,.5)}
+  #fade{position:fixed;inset:0;background:#05040a;opacity:0;transition:opacity .7s;pointer-events:none;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff6e2;font-family:'Cormorant Garamond',serif;font-size:46px;z-index:5}
+  #fade small{font-family:Nunito,sans-serif;font-size:17px;opacity:.7;margin-top:10px}
   #load{pointer-events:none;position:fixed;inset:0;background:#000;color:#f4efe4;display:flex;align-items:center;justify-content:center;font-family:'Cormorant Garamond',serif;font-size:28px;z-index:9;transition:opacity .8s}
 </style>
 <script type="importmap">
@@ -72,6 +74,7 @@
 <div id="goals"><h3>Bölüm hedefleri</h3></div>
 <div id="hint"><span class="key" id="hKey">Tab</span><span id="hText">Bölümün hedeflerini görmek için bas</span></div>
 <div id="toast"></div>
+<div id="fade"></div>
 <div id="dlg"><b id="dlgName"></b><span id="dlgText"></span><small id="dlgMore"></small></div>
 <div id="ver">yerel sürüm</div>
 <div id="cross"></div>
@@ -629,6 +632,9 @@ const DOOR = { x0: -2.05, x1: -.95, spring: 1.9 };
 // Great Hall: south of the corridor, west of the dormitory; its west wall is the castle facade
 const HALL = { x0: -9, x1: -4.3, z0: -4.6, z1: S, h: 6.2 }, HD = { x0: -7.5, x1: -5.8, spring: 2.4 }, HD_XC = (-7.5 - 5.8) / 2;
 const hallDoor = { open: 0, target: 0 };
+// house dormitory: east of the tower room, south of the library; reached through a short passage from the corridor
+const DORM = { x0: 4.3, x1: 11.8, z0: -4.4, z1: 2.2 }, DD = { x0: 4.45, x1: 5.55, spring: 1.9 }, DD_XC = 5.0;
+const dormDoor = { open: 0, target: 0 };
 const doorState = { open: 0, target: 0 };
 const floors = [floor];
 let doorBody = null;
@@ -689,7 +695,9 @@ const doorPivot = new THREE.Group(); doorPivot.position.set(DOOR.x0, 0, S - .06)
 stoneBox(CX0, HD.x0, 0, H, S, S + T);                      // south wall, west of the Great Hall door
 stoneBox(HD.x1, DOOR.x0, 0, H, S, S + T);                  // between the hall door and the dormitory door
 solid(mesh(lintel(HD.x0, HD.x1, HD.spring, H, T), stoneMat, 0, 0, S));
-stoneBox(DOOR.x1, CX1, 0, H, S, S + T);                    // right of the door
+stoneBox(DOOR.x1, DD.x0, 0, H, S, S + T);
+stoneBox(DD.x1, CX1, 0, H, S, S + T);
+solid(mesh(lintel(DD.x0, DD.x1, DD.spring, H, T), stoneMat, 0, 0, S));   // dormitory door opening
 solid(mesh(lintel(DOOR.x0, DOOR.x1, DOOR.spring, H, T), stoneMat, 0, 0, S));
 // east end: wall with an arched door into the library (built further down)
 const LX1 = 12.6, LZ0 = 2.6, LZ1 = 8.6, LDOOR = { z0: 5.1, z1: 6.2, spring: 1.9 }, LDOOR_ZC = (5.1 + 6.2) / 2;
@@ -761,7 +769,7 @@ const corrFill = new THREE.PointLight(0xb8c8e8, 2.5, 9, 2); corrFill.position.se
   const frameM = gold, pics = [
     ['#5a3a2a', '#e0c098', '#2a2f4a'], ['#23324f', '#c9a36a', '#6a2a2a'], ['#3d4a2a', '#e8d2a8', '#4a2a4a'],
   ];
-  [[-4.4, 0], [2.6, 1], [5.2, 2]].forEach(([x, k]) => {
+  [[-4.4, 0], [2.6, 1]].forEach(([x, k]) => {
     const [bg, face, cloth] = pics[k];
     const t = canvasTex(192, 256, (g, w, h) => {
       const q = g.createLinearGradient(0, 0, 0, h); q.addColorStop(0, bg); q.addColorStop(1, '#120c08'); g.fillStyle = q; g.fillRect(0, 0, w, h);
@@ -793,16 +801,6 @@ const corrFill = new THREE.PointLight(0xb8c8e8, 2.5, 9, 2); corrFill.position.se
   for (const sx of [-1, 1]) solid(mesh(new THREE.BoxGeometry(.08, .42, .4), woodMid, -.5 + sx * .6, .21, CZ1 - .3));
   box(-1.25, .25, CZ1 - .55, CZ1);
   [0x6b1d1d, 0x1f3b5a, 0x2d4a2a].forEach((c, i) => loose(mesh(new RoundedBoxGeometry(.26, .06, .2, 2, .01), new THREE.MeshStandardMaterial({ color: c, roughness: .7 }), -.8, .53 + i * .065, CZ1 - .3), .45, 'book'));
-  // other dormitory doors along the corridor (closed)
-  const vt2 = new THREE.MeshStandardMaterial({ color: 0x4a2c18, roughness: .7 });
-  const iron = new THREE.MeshStandardMaterial({ color: 0x1e1c1a, roughness: .45, metalness: .8 });
-  for (const x of [-6.8, 4.4]) {
-    mesh(new THREE.ExtrudeGeometry(archPath(new THREE.Shape(), 0, 1.06, 0, 1.9), { depth: .06, bevelEnabled: false, curveSegments: 16 }), vt2, x, 0, S + T);
-    const a = new THREE.Shape(); archPath(a, 0, 1.4, 0, 1.9); a.holes.push(archPath(new THREE.Path(), 0, 1.12, 0, 1.9));
-    mesh(new THREE.ExtrudeGeometry(a, { depth: .1, bevelEnabled: false, curveSegments: 16 }), stoneMat, x, 0, S + T);
-    for (const y of [.45, 1.5]) mesh(new THREE.BoxGeometry(1.04, .07, .02), iron, x, y, S + T + .07);
-    mesh(new THREE.TorusGeometry(.07, .012, 8, 20), iron, x + .36, .95, S + T + .09);
-  }
   // a wooden stool to kick around
   const st = new THREE.Group(); st.position.set(5.6, 0, 6.4); scene.add(st); st.userData.dynGroup = 2.5; st.userData.kind = 'wood';
   mesh(new THREE.CylinderGeometry(.2, .2, .05, 16), woodMid, 0, .45, 0, st);
@@ -960,6 +958,7 @@ const LIB_BOOKS = [
   { title: 'Kayıp Çoraplar Üzerine Bir İnceleme', line: 'Kaybolan çorapların çoğu, Görünmezlik Büyüsü çalışırken yanlışlıkla onları da büyüleyen öğrencilerin sepetinde saklanır.' },
 ];
 let libSeen = false;
+const inLibrary = p => p.x > CX1 + T + .3 && p.z > LZ0 && p.z < LZ1;
 {
   const LX0 = CX1 + T;
   // shell
@@ -1157,6 +1156,118 @@ function updateHall(t, dt) {
   for (const l of hallLeaves) l.pv.rotation.y = l.base + l.dir * hallDoor.open * 1.55;
 }
 
+// ---- house dormitory: door (E) from the corridor, four curtained beds in the player's house colours, a nightstand
+// and a trunk by each, a rug, a window onto the night sky; the player's own bed (marked) lets you rest (E)
+const dormA = new THREE.MeshStandardMaterial({ color: 0x7c1016, roughness: .85, side: THREE.DoubleSide });
+const dormB = new THREE.MeshStandardMaterial({ color: 0xd5a03a, roughness: .5, metalness: .3 });
+const dormRug = new THREE.MeshStandardMaterial({ roughness: 1 });
+const BED_X = [5.4, 7.2, 9.0, 10.8], MY_BED = 1, BED_SPOT = new THREE.Vector3(BED_X[MY_BED], 0, -1.25);
+let dormPivot = null, dormSeen = false, resting = false;
+{
+  const { x0, x1, z0, z1 } = DORM;
+  // floor: the tower room's planks at the same scale
+  const fm = floorMap.clone(); fm.repeat.set(floorMap.repeat.x / (2 * S), floorMap.repeat.y / (2 * S)); fm.needsUpdate = true;
+  floorPlane(x0, x1, z0, z1, new THREE.MeshStandardMaterial({ map: fm, roughness: .62 }));
+  floorPlane(DD.x0 - .2, DD.x1 + .2, z1 - .05, S, flagMat);
+  // shell: passage walls, west, south, east (with the window); the library's south wall closes the north side
+  stoneBox(S + T, DD.x0, 0, H, z1, S); stoneBox(DD.x1, CX1, 0, H, z1, S);
+  stoneBox(S + T, x0, 0, H, z0 - T, z1);
+  stoneBox(S + T, x1 + T, 0, H, z0 - T, z0);
+  const WZ = -.5, zc = (z0 + z1) / 2, DWIN = { cx: zc - WZ, w: 1.3, y0: 1.0, y1: 2.5 };
+  const ew = solid(mesh(wall(z1 - z0, [DWIN]), stoneMat, x1, 0, zc)); ew.rotation.y = Math.PI / 2;
+  stoneBox(x1, x1 + T, 0, H, z1, z1 + T);
+  solid(mesh(meterBox(x1 + T - S - T, .3, z1 - z0 + 2 * T), new THREE.MeshStandardMaterial({ map: ceilMap, roughness: .8, color: 0x8a7a6a }), (S + T + x1 + T) / 2, H + .15, (z0 + z1) / 2));
+  stoneBox(S + T, CX1, H, H + .3, z1, S);
+  // window: iron bars + the night sky outside (stars and a crescent moon)
+  const iron = new THREE.MeshStandardMaterial({ color: 0x2a2420, roughness: .5, metalness: .6 });
+  mesh(new THREE.BoxGeometry(.05, 2.15, .05), iron, x1 + T / 2, 1.0 + 2.15 / 2, WZ);
+  for (const y of [1.6, 2.2]) mesh(new THREE.BoxGeometry(.04, .04, 1.3), iron, x1 + T / 2, y, WZ);
+  solid(mesh(new THREE.BoxGeometry(T + .2, .09, 1.6), stoneMat, x1 + T / 2 - .05, .96, WZ));
+  const night = canvasTex(512, 640, (g, w, h) => {
+    const q = g.createLinearGradient(0, 0, 0, h); q.addColorStop(0, '#060a22'); q.addColorStop(.7, '#16204a'); q.addColorStop(1, '#2c3a6a'); g.fillStyle = q; g.fillRect(0, 0, w, h);
+    const R = rng(29); for (let i = 0; i < 420; i++) { g.fillStyle = `rgba(255,250,235,${.3 + R() * .7})`; g.beginPath(); g.arc(R() * w, R() * h * .8, R() < .05 ? 2.2 : .5 + R(), 0, 7); g.fill(); }
+    const mg = g.createRadialGradient(330, 190, 10, 330, 190, 120); mg.addColorStop(0, 'rgba(220,230,255,.35)'); mg.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = mg; g.fillRect(0, 0, w, h);
+    g.fillStyle = '#f4f0dc'; g.beginPath(); g.arc(330, 190, 46, 0, 7); g.fill(); g.fillStyle = '#0c1230'; g.beginPath(); g.arc(352, 176, 42, 0, 7); g.fill();
+    g.fillStyle = 'rgba(200,210,235,.25)'; for (let i = 0; i < 5; i++) { g.beginPath(); g.ellipse(R() * w, h * (.85 + R() * .15), 120 + R() * 80, 22, 0, 0, 7); g.fill(); }
+  });
+  const sky = mesh(new THREE.PlaneGeometry(3, 4), new THREE.MeshBasicMaterial({ map: night, fog: false }), x1 + T + .5, 2.0, WZ); sky.rotation.y = -Math.PI / 2; sky.castShadow = false;
+  // door leaf (opens into the passage) + arch stones
+  dormPivot = new THREE.Group(); dormPivot.position.set(DD.x0, 0, S - .06); scene.add(dormPivot);
+  const vt = canvasTex(256, 512, (g, w, h) => { const R = rng(53); for (let i = 0; i < 5; i++) { g.fillStyle = `hsl(${20 + R() * 6},38%,${17 + R() * 8}%)`; g.fillRect(i * w / 5, 0, w / 5, h); g.fillStyle = 'rgba(10,5,2,.8)'; g.fillRect(i * w / 5, 0, 3, h); } });
+  mesh(new THREE.ExtrudeGeometry(archPath(new THREE.Shape(), 0, 1.06, 0, DD.spring), { depth: .08, bevelEnabled: false, curveSegments: 20 }), new THREE.MeshStandardMaterial({ map: vt, roughness: .7 }), .55, 0, -.04, dormPivot);
+  const ironD = new THREE.MeshStandardMaterial({ color: 0x1e1c1a, roughness: .45, metalness: .8 });
+  for (const y of [.45, 1.5]) for (const z of [-.05, .05]) mesh(new THREE.BoxGeometry(1.04, .07, .02), ironD, .55, y, z, dormPivot);
+  for (const z of [-.07, .07]) mesh(new THREE.TorusGeometry(.07, .012, 8, 20), ironD, .92, .95, z, dormPivot);
+  const arch = new THREE.Shape(); archPath(arch, 0, 1.4, 0, DD.spring); arch.holes.push(archPath(new THREE.Path(), 0, 1.12, 0, DD.spring));
+  const ag = new THREE.ExtrudeGeometry(arch, { depth: .1, bevelEnabled: false, curveSegments: 20 });
+  mesh(ag, stoneMat, DD_XC, 0, S - .1); mesh(ag, stoneMat, DD_XC, 0, S + T);
+  // a small shield above the door in the house colours
+  mesh(new THREE.CylinderGeometry(.22, .22, .05, 6), dormB, DD_XC, 2.75, S + T + .04).rotation.x = Math.PI / 2;
+  mesh(new THREE.CylinderGeometry(.16, .16, .06, 6), dormA, DD_XC, 2.75, S + T + .05).rotation.x = Math.PI / 2;
+  // beds
+  const linen = new THREE.MeshStandardMaterial({ color: 0xeee6d6, roughness: .9 });
+  BED_X.forEach((bx, k) => {
+    const g = new THREE.Group(); g.position.set(bx, 0, z0 + 1.05); scene.add(g);      // bed centre; head at the south wall
+    solid(mesh(new THREE.BoxGeometry(1.0, .3, 1.95), woodDark, 0, .3, 0, g));
+    mesh(new RoundedBoxGeometry(.92, .16, 1.85, 2, .05), linen, 0, .52, 0, g);
+    mesh(new RoundedBoxGeometry(.96, .08, 1.3, 2, .03), dormA, 0, .6, .3, g);
+    mesh(new RoundedBoxGeometry(.6, .12, .3, 2, .05), linen, 0, .64, -.72, g);
+    mesh(new THREE.BoxGeometry(1.04, .9, .06), woodDark, 0, .75, -.98, g);              // headboard
+    for (const [px, pz] of [[-.5, -.97], [.5, -.97], [-.5, .97], [.5, .97]]) mesh(new THREE.CylinderGeometry(.035, .035, 2.2, 8), woodDark, px, 1.1, pz, g);
+    for (const pz of [-.97, .97]) mesh(new THREE.BoxGeometry(1.07, .06, .06), woodDark, 0, 2.2, pz, g);
+    for (const px of [-.5, .5]) mesh(new THREE.BoxGeometry(.06, .06, 2.0), woodDark, px, 2.2, 0, g);
+    // curtains: canopy, back panel, side curtains gathered at the posts, a trimmed valance
+    mesh(new THREE.PlaneGeometry(1.0, 2.0), dormA, 0, 2.23, 0, g).rotation.x = -Math.PI / 2;
+    mesh(new THREE.PlaneGeometry(1.0, 1.25), dormA, 0, 1.6, -1.0, g);
+    for (const px of [-.53, .53]) for (const pz of [-.75, .75]) { const c = mesh(new THREE.BoxGeometry(.04, 1.75, .38), dormA, px, 1.3, pz, g); c.scale.x = 1; }
+    for (const pz of [-1.0, 1.0]) mesh(new THREE.BoxGeometry(1.08, .22, .03), dormA, 0, 2.08, pz, g);
+    mesh(new THREE.BoxGeometry(1.08, .03, .035), dormB, 0, 1.98, 1.0, g);
+    // nightstand with a candle, trunk at the foot
+    const ns = new THREE.Group(); ns.position.set(bx + .78, 0, z0 + .3); scene.add(ns);
+    solid(mesh(new THREE.BoxGeometry(.42, .55, .4), woodMid, 0, .275, 0, ns));
+    mesh(new THREE.BoxGeometry(.3, .03, .02), dormB, 0, .4, .205, ns);
+    mesh(new THREE.CylinderGeometry(.03, .035, .14, 10), linen, 0, .62, 0, ns);
+    const fl = new THREE.Sprite(new THREE.SpriteMaterial({ map: flameTex, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, color: 0xffa040 }));
+    fl.position.set(bx + .78, .75, z0 + .3); fl.scale.set(.045, .09, 1); scene.add(fl);
+    const tr = new THREE.Group(); tr.position.set(bx, 0, z0 + 2.3); scene.add(tr);
+    solid(mesh(new RoundedBoxGeometry(.85, .42, .45, 2, .03), woodMid, 0, .21, 0, tr));
+    for (const sx of [-.3, .3]) mesh(new THREE.BoxGeometry(.05, .43, .46), dormB, sx, .21, 0, tr);
+    box(bx - .55, bx + 1.0, z0, z0 + 2.55);
+    if (k === MY_BED) {
+      // the player's bed: a pennant with a star on the canopy and a soft golden glow over the pillow
+      const pen = canvasTex(128, 192, (g2, w, h) => { g2.fillStyle = '#fff'; g2.beginPath(); g2.moveTo(0, 0); g2.lineTo(w, 0); g2.lineTo(w, h * .75); g2.lineTo(w / 2, h); g2.lineTo(0, h * .75); g2.fill(); g2.fillStyle = '#c8963a'; g2.font = 'bold 90px Georgia, serif'; g2.textAlign = 'center'; g2.textBaseline = 'middle'; g2.fillText('✦', w / 2, h * .42); });
+      const pm = new THREE.MeshStandardMaterial({ map: pen, color: 0xffffff, transparent: true, alphaTest: .5, side: THREE.DoubleSide, roughness: .8 });
+      dormRug.userData.pen = pm;
+      mesh(new THREE.PlaneGeometry(.45, .68), pm, 0, 1.68, 1.04, g).castShadow = false;
+      const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0xffd27a, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: .45 }));
+      glow.position.set(0, 1.0, -.6); glow.scale.setScalar(.8); g.add(glow); window.__bedGlow = glow;
+    }
+  });
+  // rug in the middle (pattern tinted with the house colour)
+  dormRug.map = canvasTex(512, 384, (g, w, h) => {
+    g.fillStyle = '#c8c0b8'; g.fillRect(0, 0, w, h); g.strokeStyle = '#fff'; g.lineWidth = 14; g.strokeRect(20, 20, w - 40, h - 40);
+    g.lineWidth = 5; g.strokeRect(46, 46, w - 92, h - 92); g.fillStyle = '#ffffff';
+    for (let i = 0; i < 5; i++) { g.beginPath(); g.ellipse(w / 2, h / 2, 40 + i * 30, 26 + i * 20, 0, 0, 7); g.stroke(); }
+    g.font = 'bold 70px Georgia, serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('✦', w / 2, h / 2 + 4);
+  });
+  const rug = mesh(new THREE.PlaneGeometry(3.4, 2.4), dormRug, 8.1, .008, .1); rug.rotation.x = -Math.PI / 2; rug.castShadow = false;
+  const dl = new THREE.PointLight(0xd8d0ec, 6, 10, 2); dl.position.set(8.1, 3.1, -.8); scene.add(dl);
+}
+// recolour the dormitory for the chosen house (called from chooseHouse)
+function paintDorm() {
+  const hs = HOUSES[house || 'aslan'];
+  dormA.color.set(hs.a); dormB.color.set(hs.b);
+  dormRug.color.set(hs.a).lerp(new THREE.Color(0xffffff), .25);
+  dormRug.userData.pen?.color.set(hs.a).lerp(new THREE.Color(0xffffff), .15);
+}
+function rest() {
+  if (resting) return; resting = true;
+  const f = document.getElementById('fade'); f.innerHTML = ''; f.style.opacity = 1;
+  setTimeout(() => { f.innerHTML = 'Dinlendin!<small>Kısa bir uyku seni tazeledi.</small>'; sfx.chime(); }, 800);
+  setTimeout(() => { f.style.opacity = 0; }, 2600);
+  setTimeout(() => { f.innerHTML = ''; resting = false; }, 3400);
+}
+
 // ---- where the wizard may stand (union of rectangles) ----
 const zones = [
   { x0: -S, x1: S, z0: -S, z1: S },                                      // dormitory
@@ -1168,6 +1279,8 @@ const zones = [
   { x0: CX1 + T, x1: LX1, z0: LZ0, z1: LZ1 },                            // library
   { x0: HD.x0, x1: HD.x1, z0: S - .6, z1: S + T + .6, mz: 0, gate: hallDoor }, // Great Hall door
   { x0: HALL.x0, x1: HALL.x1, z0: HALL.z0, z1: HALL.z1 },                // Great Hall
+  { x0: DD.x0, x1: DD.x1, z0: DORM.z1 - .6, z1: S + T + .6, mz: 0, gate: dormDoor }, // dormitory door + passage
+  { x0: DORM.x0, x1: DORM.x1, z0: DORM.z0, z1: DORM.z1 },                // house dormitory
 ];
 function walkable(x, z, r) {
   for (const zn of zones) {
@@ -1474,7 +1587,7 @@ function chooseHouse(k) {
   for (const b of document.querySelectorAll('#houses button')) b.classList.toggle('sel', b.dataset.k === k);
   document.getElementById('houseAsk').textContent = 'Binan: ' + HOUSES[k].name + ' (değiştirmek için başka birine tıkla)';
   document.getElementById('startTxt').style.visibility = 'visible';
-  applyHouse();
+  applyHouse(); paintDorm();
 }
 for (const [k, h] of Object.entries(HOUSES)) {
   const b = document.createElement('button'); b.dataset.k = k;
@@ -1773,6 +1886,7 @@ function nearWand() { return !hasWand && wiz.root.position.distanceTo(new THREE.
 const lights = { fire: 1, fireT: 1, desk: 1, deskT: 1, cand: 1, candT: 1, curt: 0, curtT: 0 };
 const FIRE_SPOT = new THREE.Vector3(S - 1.15, 0, .2), WIN_SPOT = new THREE.Vector3(WIN.cx, 0, -S + .7), DESK_SPOT = new THREE.Vector3(-2.7, 0, 1.1);
 const DOOR_SPOT_IN = new THREE.Vector3(-1.5, 0, S - .7), DOOR_SPOT_OUT = new THREE.Vector3(-1.5, 0, S + T + .7);
+const DORM_OUT = new THREE.Vector3(DD_XC, 0, S + T + .7), DORM_IN = new THREE.Vector3(DD_XC, 0, S - .7);
 const HALL_OUT = new THREE.Vector3(HD_XC, 0, S + T + .7), HALL_IN = new THREE.Vector3(HD_XC, 0, S - .7);
 const LDOOR_OUT = new THREE.Vector3(CX1 - .7, 0, LDOOR_ZC), LDOOR_IN = new THREE.Vector3(CX1 + T + .7, 0, LDOOR_ZC);
 const near = (v, r) => Math.hypot(wiz.root.position.x - v.x, wiz.root.position.z - v.z) < r;
@@ -1785,6 +1899,11 @@ function aimingAtCandles() {
 }
 // the action E would do right now: { key, label, run }
 function currentAction() {
+  if (near(DORM_OUT, 1.3) || near(DORM_IN, 1.3)) return { label: dormDoor.target ? 'Yatakhane kapısını kapat' : 'Yatakhane kapısını aç', run: () => {
+    faceTo(new THREE.Vector3(DD_XC, 0, S + T / 2)); playOnce('use');
+    dormDoor.target = dormDoor.target ? 0 : 1; sfx.door(new THREE.Vector3(DD_XC, 1.2, S + T / 2), dormDoor.target);
+  } };
+  if (!resting && near(BED_SPOT, 1.0)) return { label: 'Yatağında dinlen', run: () => { faceTo(new THREE.Vector3(BED_X[MY_BED], 0, DORM.z0)); rest(); } };
   if (near(HALL_OUT, 1.3) || near(HALL_IN, 1.3)) return { label: hallDoor.target ? 'Büyük Salon kapısını kapat' : 'Büyük Salon kapısını aç', run: () => {
     faceTo(new THREE.Vector3(HD_XC, 0, S + T / 2)); playOnce('use');
     hallDoor.target = hallDoor.target ? 0 : 1; sfx.door(new THREE.Vector3(HD_XC, 1.2, S + T / 2), hallDoor.target);
@@ -2094,6 +2213,7 @@ const prof = makeNPC({
 });
 // corridor students, one per house (the player's own house among them or not); they keep clear of the dormitory door
 const STUDENT_BOX = { x0: CX0 + 1, x1: CX1 - 1, z0: CZ0 + .55, z1: CZ1 - .6 }, DOOR_CLEAR = { x0: -2.6, x1: -.4, z0: CZ0, z1: CZ0 + 1.3 };
+const DORM_CLEAR = { x0: DD.x0 - .5, x1: DD.x1 + .5, z0: CZ0, z1: CZ0 + 1.3 };
 const HALL_CLEAR = { x0: HD.x0 - .4, x1: HD.x1 + .4, z0: CZ0, z1: CZ0 + 1.3 }, SEAT_Y = .3;
 const LIB_CLEAR = { x0: CX1 - 1.6, x1: CX1, z0: LDOOR.z0 - .5, z1: LDOOR.z1 + .5 };
 const STUDENTS = [
@@ -2102,7 +2222,7 @@ const STUDENTS = [
   { house: 'porsuk', ten: 'esmer', sac: 'siyah', name: 'Mert Toprakçı', pos: [4.6, 0, 5], line: 'Acıkırsan söyle; mutfaktaki ev cinleri Porsuklara hep fazladan kurabiye verir.' },
   // sits on a Great Hall bench facing the table
   { house: 'yilan', ten: 'koyu', sac: 'kizil', name: 'Selin Ayaz', pos: [-7.36, SEAT_Y, .9], seated: -Math.PI / 2, line: 'Tavana bak: gerçek gökyüzünü gösterir. Yağmur yağarsa çorbana damla düşmesin diye önce şemsiye büyüsünü öğren!' },
-].map(st => ({ ...st, npc: makeNPC({ name: `${st.name} · ${HOUSES[st.house].name}`, title: `${st.name.split(' ')[0]} ile konuş`, pos: st.pos, box: STUDENT_BOX, speed: .55, lines: [st.line], avoid: [DOOR_CLEAR, LIB_CLEAR, HALL_CLEAR], seated: st.seated }) }));
+].map(st => ({ ...st, npc: makeNPC({ name: `${st.name} · ${HOUSES[st.house].name}`, title: `${st.name.split(' ')[0]} ile konuş`, pos: st.pos, box: STUDENT_BOX, speed: .55, lines: [st.line], avoid: [DOOR_CLEAR, LIB_CLEAR, HALL_CLEAR, DORM_CLEAR], seated: st.seated }) }));
 
 // shared dialogue box: who = 'npc' (dlg.npc = the speaker) or 'intro' (headmaster's welcome after the start screen)
 const dlg = { open: false, i: 0, timer: 0, who: null, lines: [], onEnd: null };
@@ -2230,7 +2350,7 @@ function frame() {
     if (keys.KeyS) inp.sub(f);
     if (keys.KeyD) inp.add(rgt);
     if (keys.KeyA) inp.sub(rgt);
-    if (dlg.who === 'intro') inp.set(0, 0);   // stand still while the headmaster speaks
+    if (dlg.who === 'intro' || resting) inp.set(0, 0);   // stand still while the headmaster speaks
     // arrow keys turn / tilt the camera (for browsers without pointer lock); same directions as the mouse
     yaw += ((keys.ArrowLeft ? 1 : 0) - (keys.ArrowRight ? 1 : 0)) * 2.2 * dt;
     pitch = THREE.MathUtils.clamp(pitch + ((keys.ArrowDown ? 1 : 0) - (keys.ArrowUp ? 1 : 0)) * 1.2 * dt, -.25, 1.15);
@@ -2329,6 +2449,10 @@ function frame() {
   doorPivot.rotation.y = doorState.open * 1.75;
   if (doorBody) doorBody.collisionResponse = doorState.open < .3;
   updateHall(t, dt);
+  dormDoor.open += (dormDoor.target - dormDoor.open) * Math.min(1, dt * 3.2);
+  dormPivot.rotation.y = dormDoor.open * 1.75;
+  if (window.__bedGlow) window.__bedGlow.material.opacity = .3 + .15 * Math.sin(t * 2.2);
+  if (!dormSeen && p.x > DORM.x0 && p.z < DORM.z1 - .3 && p.z > DORM.z0) { dormSeen = true; sfx.chime(); toast('Yatakhane', 2600); }
   if (!updateHall.seen && p.z < S - .4 && p.x < HALL.x1) { updateHall.seen = 1; sfx.chime(); toast('Büyük Salon', 2600); }
   // library door, candles, old-book shimmer
   libDoor.open += (libDoor.target - libDoor.open) * Math.min(1, dt * 3.2);
@@ -2336,7 +2460,7 @@ function frame() {
   window.__libFlames.forEach((f, i) => f.scale.set(.05 + Math.sin(t * 13 + i * 3) * .006, .1 + Math.sin(t * 17 + i) * .015, 1));
   window.__libLight.intensity = 5 + Math.sin(t * 7) * .35 + Math.sin(t * 13.3) * .2;
   LIB_BOOKS.forEach((b, i) => { b.glow.material.opacity = .25 + .15 * Math.sin(t * 2 + i * 1.7); });
-  if (!libSeen && p.x > CX1 + T + .3) { libSeen = true; if (Q[quest].id !== 'lib') toast('Kütüphane', 2200); }
+  if (!libSeen && inLibrary(p)) { libSeen = true; if (Q[quest].id !== 'lib') toast('Kütüphane', 2200); }
   if (dlg.open && dlg.at && Math.hypot(p.x - dlg.at.x, p.z - dlg.at.z) > 2.5) closeDialog();
   // corridor torches + drifting clouds
   for (const tc of torches) { tc.f.scale.set(.15 + Math.sin(t * 13 + tc.ph) * .015, .3 + Math.sin(t * 17 + tc.ph) * .04, 1); tc.halo.material.opacity = .4 + Math.sin(t * 9 + tc.ph) * .06; }
@@ -2406,7 +2530,7 @@ function frame() {
   if (!seen.corr && p.z > S + T + .4 && p.x < CX1) { seen.corr = 1; toast('Ortak koridor', 2200); }
   if (!seen.terr && p.x < CX0 - 1) { seen.terr = 1; toast('Bulutların üstünde bir teras…', 3200); }
   if (!seen.win && Math.hypot(p.x - WIN.cx, p.z + S) < 1.35) { seen.win = 1; toast('Kulen bulutların çok üstünde…', 3200); }
-  if (Q[quest].id === 'lib' && p.x > CX1 + T + .3) completeQuest('lib');
+  if (Q[quest].id === 'lib' && inLibrary(p)) completeQuest('lib');
 
   // hint
   const hk = document.getElementById('hKey'), ht = document.getElementById('hText');
@@ -2430,7 +2554,7 @@ renderer.compileAsync(scene, camera).catch(() => {}).then(() => {
 fetch('version.json', { cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(v => {
   if (v) document.getElementById('ver').textContent = `sürüm ${v.sha.slice(0, 7)} · ${v.branch} · ${v.time}` + (LITE ? ' · hafif mod' : '');
 }).catch(() => {});
-window.__dbg = { hallDoor, completeQuest, getQuest: () => Q[quest].id, libDoor, LIB_BOOKS, npcs, STUDENTS, updateNPC, startIntro, LITE, chooseLook, look, chooseHouse, prof, dlg, scene, camera, wiz, renderer, frame, doorState, setQuest, curtains, getDrag: () => curtainDrag, lights, interact, currentAction, grab, release, aimHit, aimItem, getHeld: () => held, fixSize: (w, h) => { camera.aspect = w / h; camera.updateProjectionMatrix(); renderer.setSize(w, h, false); composer.setSize(w, h); }, getYaw: () => yaw, setView: (y, p, d) => { yaw = y; pitch = p; dist = d; camPos.set(0, 0, 0); }, start: () => { started = true; document.getElementById('start')?.remove(); } };
+window.__dbg = { dormDoor, BED_SPOT, isResting: () => resting, hallDoor, completeQuest, getQuest: () => Q[quest].id, libDoor, LIB_BOOKS, npcs, STUDENTS, updateNPC, startIntro, LITE, chooseLook, look, chooseHouse, prof, dlg, scene, camera, wiz, renderer, frame, doorState, setQuest, curtains, getDrag: () => curtainDrag, lights, interact, currentAction, grab, release, aimHit, aimItem, getHeld: () => held, fixSize: (w, h) => { camera.aspect = w / h; camera.updateProjectionMatrix(); renderer.setSize(w, h, false); composer.setSize(w, h); }, getYaw: () => yaw, setView: (y, p, d) => { yaw = y; pitch = p; dist = d; camPos.set(0, 0, 0); }, start: () => { started = true; document.getElementById('start')?.remove(); } };
 </script>
 </body>
 </html>
