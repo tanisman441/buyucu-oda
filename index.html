@@ -50,6 +50,8 @@
   #looks button{min-width:34px;height:30px;padding:0 10px;border-radius:15px;border:2px solid rgba(244,239,228,.3);background:rgba(0,0,0,.35);color:#f4efe4;font:600 13px Nunito,sans-serif;cursor:pointer;display:flex;align-items:center;gap:6px}
   #looks button i{display:block;width:14px;height:14px;border-radius:50%;border:1px solid rgba(255,255,255,.4)}
   #looks button.sel{border-color:#f5c76a;box-shadow:0 0 10px rgba(245,199,106,.45)}
+  #startTxt{margin-top:14px;padding:10px 34px;border-radius:22px;border:2px solid #f5c76a;background:rgba(245,199,106,.2);color:#fff6e2;font:700 18px Nunito,sans-serif;cursor:pointer}
+  #startTxt:hover,#startTxt:focus{background:rgba(245,199,106,.38);outline:none;box-shadow:0 0 14px rgba(245,199,106,.5)}
   #load{pointer-events:none;position:fixed;inset:0;background:#000;color:#f4efe4;display:flex;align-items:center;justify-content:center;font-family:'Cormorant Garamond',serif;font-size:28px;z-index:9;transition:opacity .8s}
 </style>
 <script type="importmap">
@@ -76,7 +78,8 @@
   <p id="houseAsk">Binanı seç</p>
   <div id="houses"></div>
   <div id="looks"></div>
-  <p id="startTxt" style="visibility:hidden">Başlamak için tıkla</p>
+  <button id="startTxt" style="visibility:hidden">Başla</button>
+  <p style="margin:6px 0 0;font-size:14px">ya da ekrana tıkla / Enter'a bas</p>
   <div class="ctl">
     <span><b class="key">W A S D</b> yürü</span>
     <span><b class="key">Shift</b> koş</span>
@@ -101,6 +104,7 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import * as CANNON from 'cannon-es';
 
 // ---------------------------------------------------------------- renderer
@@ -113,6 +117,13 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.0;
 document.body.prepend(renderer.domElement);
 
+// software WebGL (SwiftShader / llvmpipe, e.g. cloud test browsers) compiles each shader in ~0.3 s and
+// froze the first frame for 15+ s; there we skip the post-processing chain (bloom + grade). ?lite=1 forces it.
+const LITE = (() => {
+  if (/[?&]lite=1/.test(location.search)) return true;
+  const gl = renderer.getContext(), ext = gl.getExtension('WEBGL_debug_renderer_info');
+  return /swiftshader|llvmpipe|softpipe|software/i.test(String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)));
+})();
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x090605);
 const pmrem = new THREE.PMREMGenerator(renderer);
@@ -1286,25 +1297,44 @@ wiz.root.rotation.y = Math.PI;
 // the Mage texture is an 8x4 grid of colour swatches: (0,0) face skin, (7,2) hand skin, (1,0) hair
 const SKIN_REF = [245, 188, 151], HAIR_REF = 40;
 const hexRGB = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
-function recolor(img, hs = HOUSES[house || 'aslan']) {
-  const skin = hexRGB(LOOKS.ten.opts[look.ten][1]), hair = look.sac === 'siyah' ? null : hexRGB(LOOKS.sac.opts[look.sac][1]);
+// Repaint the atlas swatch by swatch: each swatch is one hue, so it is classified once from its centre
+// and only the swatches that change are touched, through a 256-step lightness table (fast even on
+// software WebGL / slow CPUs, where the old per-pixel HSL loop froze the page for seconds).
+// pick(sx, sy, {h (deg), s, l}) returns null (keep) or a function (r, g, b) -> [r, g, b].
+function paintAtlas(img, pick) {
   const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
-  const g = c.getContext('2d'); g.drawImage(img, 0, 0);
-  const d = g.getImageData(0, 0, c.width, c.height), px = d.data, col = new THREE.Color(), hsl = {};
-  for (let i = 0; i < px.length; i += 4) {
-    const sx = Math.floor((i / 4 % c.width) * 8 / c.width), sy = Math.floor(Math.floor(i / 4 / c.width) * 4 / c.height);
-    if ((sx === 0 && sy === 0) || (sx === 7 && sy === 2)) { for (let k = 0; k < 3; k++) px[i + k] = Math.min(255, skin[k] * px[i + k] / SKIN_REF[k]); continue; }
-    if (sx === 1 && sy === 0) { if (hair) { const f = Math.min(1.4, (px[i] + px[i + 1] + px[i + 2]) / 3 / HAIR_REF); for (let k = 0; k < 3; k++) px[i + k] = Math.min(255, hair[k] * f); } continue; }
-    col.setRGB(px[i] / 255, px[i + 1] / 255, px[i + 2] / 255, THREE.LinearSRGBColorSpace); col.getHSL(hsl, THREE.LinearSRGBColorSpace);
-    const h = hsl.h * 360;
-    if (h > 225 && h < 290 && hsl.s > .12) col.setHSL(hs.hue, .3, .025 + hsl.l * .17, THREE.LinearSRGBColorSpace);       // purple robe -> house-tinted black wool
-    else if (h > 300 && h < 345 && hsl.s > .4) col.setHSL(hs.hue, hs.sat, hs.l0 + hsl.l * .35, THREE.LinearSRGBColorSpace); // magenta cape -> house colour
-    else continue;
-    px[i] = col.r * 255; px[i + 1] = col.g * 255; px[i + 2] = col.b * 255;
+  const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(img, 0, 0);
+  const d = g.getImageData(0, 0, c.width, c.height), px = d.data, W = c.width, sw = W / 8, sh = c.height / 4;
+  const col = new THREE.Color(), hsl = {};
+  for (let sy = 0; sy < 4; sy++) for (let sx = 0; sx < 8; sx++) {
+    const ci = ((Math.floor(sy * sh + sh / 2) * W) + Math.floor(sx * sw + sw / 4)) * 4;
+    col.setRGB(px[ci] / 255, px[ci + 1] / 255, px[ci + 2] / 255, THREE.LinearSRGBColorSpace); col.getHSL(hsl, THREE.LinearSRGBColorSpace);
+    const fn = pick(sx, sy, { h: hsl.h * 360, s: hsl.s, l: hsl.l });
+    if (!fn) continue;
+    for (let y = Math.floor(sy * sh); y < Math.floor((sy + 1) * sh); y++) for (let x = Math.floor(sx * sw); x < Math.floor((sx + 1) * sw); x++) {
+      const i = (y * W + x) * 4, o = fn(px[i], px[i + 1], px[i + 2]);
+      px[i] = o[0]; px[i + 1] = o[1]; px[i + 2] = o[2];
+    }
   }
   g.putImageData(d, 0, 0);
   const t = new THREE.CanvasTexture(c); t.flipY = false; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
   return t;
+}
+// lightness (0..255, HSL-style (max+min)/2) -> new colour, precomputed for one swatch
+function lightLUT(h, s, l0, k) {
+  const col = new THREE.Color(), lut = [];
+  for (let l = 0; l < 256; l++) { col.setHSL(h, s, Math.min(1, l0 + l / 255 * k), THREE.LinearSRGBColorSpace); lut.push([col.r * 255, col.g * 255, col.b * 255]); }
+  return (r, g, b) => lut[(Math.max(r, g, b) + Math.min(r, g, b)) >> 1];
+}
+const isRobe = c => c.h > 225 && c.h < 290 && c.s > .12, isCape = c => c.h > 300 && c.h < 345 && c.s > .4;
+function recolor(img, hs = HOUSES[house || 'aslan']) {
+  const skin = hexRGB(LOOKS.ten.opts[look.ten][1]), hair = look.sac === 'siyah' ? null : hexRGB(LOOKS.sac.opts[look.sac][1]);
+  const robe = lightLUT(hs.hue, .3, .025, .17), cape = lightLUT(hs.hue, hs.sat, hs.l0, .35);   // house-tinted black wool, house-coloured cape
+  return paintAtlas(img, (sx, sy, c) => {
+    if ((sx === 0 && sy === 0) || (sx === 7 && sy === 2)) return (r, g, b) => [Math.min(255, skin[0] * r / SKIN_REF[0]), Math.min(255, skin[1] * g / SKIN_REF[1]), Math.min(255, skin[2] * b / SKIN_REF[2])];
+    if (sx === 1 && sy === 0) return hair && ((r, g, b) => { const f = Math.min(1.4, (r + g + b) / 3 / HAIR_REF); return [Math.min(255, hair[0] * f), Math.min(255, hair[1] * f), Math.min(255, hair[2] * f)]; });
+    return isRobe(c) ? robe : isCape(c) ? cape : null;
+  });
 }
 
 function dressUp(model) {
@@ -1351,7 +1381,10 @@ function dressUp(model) {
   for (const o of [glasses, scar, scarf, long, bun]) o.traverse(m => { if (m.isMesh) { m.castShadow = m.material !== lens; m.receiveShadow = true; } });
 }
 
-new GLTFLoader().load('models/Mage.glb', gltf => {
+// loaded and parsed once; the professor gets a skeleton-aware clone taken before the player is restyled
+const mageGLB = new Promise((res, rej) => new GLTFLoader().load('models/Mage.glb', res, undefined, rej));
+mageGLB.then(gltf => {
+  gltf.profScene = SkeletonUtils.clone(gltf.scene);
   const model = gltf.scene;
   model.scale.setScalar(MODEL_SCALE);
   for (const n of ['Mage_Hat', 'Spellbook', 'Spellbook_open', '2H_Staff']) { const o = model.getObjectByName(n); if (o) o.visible = false; }
@@ -1435,6 +1468,7 @@ const keys = {};
 let yaw = 0, pitch = .28, dist = 2.7, started = false, dragging = false;
 addEventListener('keydown', e => {
   keys[e.code] = true;
+  if (!started) { if ((e.code === 'Enter' || e.code === 'NumpadEnter') && e.target.tagName !== 'BUTTON') startGame(); return; }
   if (e.code === 'Tab') { e.preventDefault(); document.getElementById('goals').classList.add('on'); }
   if (e.code === 'KeyE') interact();
   if (e.code === 'KeyF') toggleLumos();
@@ -1445,11 +1479,14 @@ addEventListener('keydown', e => {
 addEventListener('keyup', e => { keys[e.code] = false; if (e.code === 'Tab') document.getElementById('goals').classList.remove('on'); });
 const cvs = renderer.domElement;
 if (house) chooseHouse(house);
-document.getElementById('start').addEventListener('click', () => {
+document.getElementById('start').addEventListener('click', startGame);
+document.getElementById('startTxt').addEventListener('click', e => { e.stopPropagation(); startGame(); });
+function startGame() {
+  if (started) return;
   if (!house) { const a = document.getElementById('houseAsk'); a.textContent = 'Önce bir bina seç!'; a.style.color = '#f5c76a'; return; }
   started = true; sfx.init(); const s = document.getElementById('start'); s.style.opacity = 0; setTimeout(() => s.remove(), 600);
   cvs.requestPointerLock?.();
-});
+}
 cvs.addEventListener('mousedown', e => {
   if (!started) return;
   if (document.pointerLockElement === cvs) { if (e.button === 0) castSpell(); if (e.button === 2) grab(); }
@@ -1776,23 +1813,11 @@ const PROF_LINES = [
 ];
 const dlg = { open: false, i: 0, timer: 0 };
 function profRecolor(img) {
-  const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
-  const g = c.getContext('2d'); g.drawImage(img, 0, 0);
-  const d = g.getImageData(0, 0, c.width, c.height), px = d.data, col = new THREE.Color(), hsl = {};
-  for (let i = 0; i < px.length; i += 4) {
-    col.setRGB(px[i] / 255, px[i + 1] / 255, px[i + 2] / 255, THREE.LinearSRGBColorSpace); col.getHSL(hsl, THREE.LinearSRGBColorSpace);
-    const h = hsl.h * 360;
-    if (h > 225 && h < 290 && hsl.s > .12) col.setHSL(.39, .55, .02 + hsl.l * .3, THREE.LinearSRGBColorSpace);           // purple robe/hat -> emerald
-    else if (h > 300 && h < 345 && hsl.s > .4) col.setHSL(.11, .6, .1 + hsl.l * .35, THREE.LinearSRGBColorSpace);        // magenta cape -> old gold
-    else continue;
-    px[i] = col.r * 255; px[i + 1] = col.g * 255; px[i + 2] = col.b * 255;
-  }
-  g.putImageData(d, 0, 0);
-  const t = new THREE.CanvasTexture(c); t.flipY = false; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
-  return t;
+  const robe = lightLUT(.39, .55, .02, .3), cape = lightLUT(.11, .6, .1, .35);   // emerald robe/hat, old-gold cape
+  return paintAtlas(img, (sx, sy, c) => isRobe(c) ? robe : isCape(c) ? cape : null);
 }
-new GLTFLoader().load('models/Mage.glb', gltf => {
-  const model = gltf.scene;
+mageGLB.then(gltf => {
+  const model = gltf.profScene;
   model.scale.setScalar(MODEL_SCALE * 1.12);
   for (const n of ['Spellbook', 'Spellbook_open', '1H_Wand']) { const o = model.getObjectByName(n); if (o) o.visible = false; }
   let tex = null;
@@ -2065,17 +2090,20 @@ function frame() {
   else { hk.textContent = 'Tab'; ht.textContent = 'Bölümün hedeflerini görmek için bas'; }
 
   rayMat.uniforms.uTime.value = t; grade.uniforms.uTime.value = t;
-  composer.render();
+  if (LITE) renderer.render(scene, camera); else composer.render();
   requestAnimationFrame(frame);
 }
-renderer.compile(scene, camera);
-requestAnimationFrame(() => { const l = document.getElementById('load'); l.style.opacity = 0; setTimeout(() => l.remove(), 800); });
-frame();
+// compile shaders before the first frame (in parallel where the browser supports it) so the page
+// stays responsive behind the loading screen instead of freezing inside the first render
+renderer.compileAsync(scene, camera).catch(() => {}).then(() => {
+  frame();
+  requestAnimationFrame(() => { const l = document.getElementById('load'); l.style.opacity = 0; setTimeout(() => l.remove(), 800); });
+});
 // which build is running (written by the GitHub Pages workflow) — lets testers confirm an update arrived
 fetch('version.json', { cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(v => {
-  if (v) document.getElementById('ver').textContent = `sürüm ${v.sha.slice(0, 7)} · ${v.branch} · ${v.time}`;
+  if (v) document.getElementById('ver').textContent = `sürüm ${v.sha.slice(0, 7)} · ${v.branch} · ${v.time}` + (LITE ? ' · hafif mod' : '');
 }).catch(() => {});
-window.__dbg = { chooseLook, look, chooseHouse, prof, dlg, scene, camera, wiz, renderer, frame, doorState, setQuest, curtains, getDrag: () => curtainDrag, lights, interact, currentAction, grab, release, aimHit, aimItem, getHeld: () => held, fixSize: (w, h) => { camera.aspect = w / h; camera.updateProjectionMatrix(); renderer.setSize(w, h, false); composer.setSize(w, h); }, getYaw: () => yaw, setView: (y, p, d) => { yaw = y; pitch = p; dist = d; camPos.set(0, 0, 0); }, start: () => { started = true; document.getElementById('start')?.remove(); } };
+window.__dbg = { LITE, chooseLook, look, chooseHouse, prof, dlg, scene, camera, wiz, renderer, frame, doorState, setQuest, curtains, getDrag: () => curtainDrag, lights, interact, currentAction, grab, release, aimHit, aimItem, getHeld: () => held, fixSize: (w, h) => { camera.aspect = w / h; camera.updateProjectionMatrix(); renderer.setSize(w, h, false); composer.setSize(w, h); }, getYaw: () => yaw, setView: (y, p, d) => { yaw = y; pitch = p; dist = d; camPos.set(0, 0, 0); }, start: () => { started = true; document.getElementById('start')?.remove(); } };
 </script>
 </body>
 </html>
