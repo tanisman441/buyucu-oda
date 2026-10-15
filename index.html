@@ -19,6 +19,8 @@
   #goals h3{margin:0 0 12px;font-family:'Cormorant Garamond',serif;font-weight:600;font-size:22px;color:#f5c76a}
   #goals div{margin:7px 0;opacity:.85}
   #goals .done{opacity:.45;text-decoration:line-through}
+  #goals .cur{opacity:1;color:#f5c76a}
+  #goals .cur::before{content:'➜ ';}
   #cross{position:fixed;left:50%;top:50%;width:18px;height:18px;margin:-9px 0 0 -9px;pointer-events:none;opacity:0;transition:opacity .3s,transform .15s}
   #cross.on{opacity:.85}
   #cross::before{content:'';position:absolute;left:7px;top:7px;width:4px;height:4px;border-radius:50%;background:#f4efe4;box-shadow:0 0 4px rgba(0,0,0,.7)}
@@ -67,7 +69,7 @@
   <div id="title"><span class="star">✦</span><span id="qTitle">Kule odası</span></div>
   <div id="sub">Masadaki asanı al</div>
 </div>
-<div id="goals"><h3>Bölüm hedefleri</h3><div id="g0">Masadaki asanı al</div><div id="g1">Lumos! Asanı yak</div><div id="g2">Pencereden dışarı bak</div><div id="g3">Bir şeyleri büyüyle dağıt</div><div id="g4">Koridora çık</div><div id="g5">Terasa çık</div></div>
+<div id="goals"><h3>Bölüm hedefleri</h3></div>
 <div id="hint"><span class="key" id="hKey">Tab</span><span id="hText">Bölümün hedeflerini görmek için bas</span></div>
 <div id="toast"></div>
 <div id="dlg"><b id="dlgName"></b><span id="dlgText"></span><small id="dlgMore"></small></div>
@@ -1610,20 +1612,38 @@ addEventListener('wheel', e => {
 }, { passive: true });
 
 // ---------------------------------------------------------------- quests & interaction
+// tutorial chain: each step is finished by completeQuest(id) from the place where it happens
+// (only the current step counts; a step already satisfied when it becomes current is checked in frame())
 const Q = [
-  { sub: 'Masadaki asanı al' },
-  { sub: 'Lumos! Asanı yakmak için F' },
-  { sub: 'Pencereden dışarı bak' },
-  { sub: 'Sol tık (veya Q): bir şeye küçük bir güç topu at' },
-  { sub: 'Kapıyı aç (E) ve koridora çık' },
-  { sub: 'Koridorun sonundaki terasa çık' },
-  { sub: 'Şatoyu dilediğince keşfet' },
+  { id: 'wand', title: 'Asanı al', sub: 'Masadaki asanı al' },
+  { id: 'prof', title: 'Profesör Aldric ile tanış', sub: 'Terasa çık ve Profesör Aldric ile konuş (E)' },
+  { id: 'lib', title: 'Kütüphaneyi keşfet', sub: 'Koridorun doğu ucundaki kütüphaneye gir' },
+  { id: 'student', title: 'Bir öğrenciyle tanış', sub: 'Koridordaki öğrencilerden biriyle konuş (E)' },
+  { id: 'free', sub: 'Şatoyu dilediğince keşfet' },
 ];
+for (const [k, q] of Q.entries()) if (q.title) { const d = document.createElement('div'); d.id = 'g' + k; d.textContent = q.title; document.getElementById('goals').appendChild(d); }
 let quest = 0, hasWand = false, lumos = false, lumosAmt = 0;
 function setQuest(i) {
   quest = i; const sub = document.getElementById('sub');
   sub.style.opacity = 0; setTimeout(() => { sub.textContent = Q[i].sub; sub.style.opacity = .72; }, 300);
-  for (let k = 0; k < 6; k++) document.getElementById('g' + k).classList.toggle('done', k < i);
+  for (const [k, q] of Q.entries()) if (q.title) { const el = document.getElementById('g' + k); el.classList.toggle('done', k < i); el.classList.toggle('cur', k === i); }
+}
+function showGoals(ms) {
+  const g = document.getElementById('goals'); g.classList.add('on');
+  clearTimeout(showGoals.t); showGoals.t = setTimeout(() => { if (!keys.Tab) g.classList.remove('on'); }, ms);
+}
+function completeQuest(id) {
+  if (Q[quest].id !== id) return;
+  const done = Q[quest];
+  setQuest(quest + 1); sfx.chime();
+  toast(`Görev tamamlandı!<br><span style="font-size:22px;opacity:.85">${done.title}</span>`, 2600);
+  showGoals(4000);
+  if (Q[quest].id === 'free') setTimeout(() => {
+    toast('✦ Okula hoş geldin, artık özgürsün! ✦<br><span style="font-size:22px;opacity:.85">Şatoyu dilediğince keşfet</span>', 5000);
+    sfx.chime(); document.getElementById('qTitle').textContent = 'Bulut Kulesi';
+    const c = wiz.root.position.clone().setY(1.2);
+    for (let i = 0; i < 40; i++) { const a = Math.random() * 6.28; spark(c.clone(), new THREE.Vector3(Math.cos(a) * (.6 + Math.random()), 1 + Math.random() * 1.6, Math.sin(a) * (.6 + Math.random())), 1.2 + Math.random() * .8, .05, 0xffd070); }
+  }, 2900);
 }
 function toast(t, ms = 2600) { const el = document.getElementById('toast'); el.innerHTML = t; el.style.opacity = 1; clearTimeout(toast.t); toast.t = setTimeout(() => el.style.opacity = 0, ms); }
 function nearWand() { return !hasWand && wiz.root.position.distanceTo(new THREE.Vector3(WAND_DESK.x, 0, WAND_DESK.z)) < 1.25; }
@@ -1654,7 +1674,7 @@ function currentAction() {
   if (nearWand()) return { label: 'Asayı al', run: () => {
     hasWand = true; sparkle.visible = false; faceTo(WAND_DESK);
     playOnce('pick', () => { wand.visible = false; if (wiz.wand) wiz.wand.visible = true; sfx.pickup(WAND_DESK); });
-    toast('Asa seni seçti.'); setQuest(1);
+    completeQuest('wand');
   } };
   if (near(FIRE_SPOT, 1.5)) return { label: lights.fireT ? 'Ateşi söndür' : 'Ateşi yak', run: () => {
     if (!hasWand) { toast('Asan olmadan olmaz.', 1600); return; }
@@ -1695,7 +1715,6 @@ function toggleLumos() {
   if (lumos) playOnce('cast');
   sfx.lumos(wiz.root.position.clone().setY(1), lumos);
   toast(lumos ? '<i>Lumos!</i>' : '<i>Nox.</i>', 1400);
-  if (lumos && quest === 1) setTimeout(() => setQuest(2), 900);
 }
 
 // ---------------------------------------------------------------- spell: a small force orb
@@ -1757,7 +1776,7 @@ function burst(pt, normal) {
     b.applyImpulse(new CANNON.Vec3(off.x * mag, off.y * mag, off.z * mag), new CANNON.Vec3(b.position.x + (Math.random() - .5) * .04, b.position.y + (Math.random() - .5) * .04, b.position.z + (Math.random() - .5) * .04));
     moved++;
   }
-  if (quest === 3 && moved >= 2) setTimeout(() => { setQuest(4); sfx.chime(); toast('Ufak ama etkili.', 2200); }, 600);
+  if (moved >= 2 && !castSpell.firstHit) { castSpell.firstHit = true; setTimeout(() => toast('Ufak ama etkili.', 2200), 600); }
 }
 function updateSpells(dt) {
   spellCool -= dt;
@@ -1995,7 +2014,12 @@ function nearestNPC(r) {
   for (const n of npcs) { if (!n.ready) continue; const d = Math.hypot(wiz.root.position.x - n.root.position.x, wiz.root.position.z - n.root.position.z); if (d < bd) { bd = d; best = n; } }
   return best;
 }
-function talkTo(n) { openDialog('npc', n.name, n.lines, () => { n.wait = 2; }, n); }
+function talkTo(n) {
+  openDialog('npc', n.name, n.lines, () => { n.wait = 2; }, n);
+  // finish the step when the conversation closes, so the toast doesn't cover the dialogue
+  const id = n === prof ? 'prof' : 'student';
+  if (Q[quest].id === id) dlg.onEnd = () => { n.wait = 2; completeQuest(id); };
+}
 function openDialog(who, name, lines, onEnd, npc = null) {
   Object.assign(dlg, { open: true, i: -1, who, lines, onEnd, npc, at: null });
   document.getElementById('dlgName').textContent = name;
@@ -2018,8 +2042,7 @@ document.getElementById('dlg').addEventListener('click', e => { e.stopPropagatio
 function startIntro() {
   openDialog('intro', HEAD_NAME, introLines(), () => {
     // hand over to the first chapter goal
-    setQuest(quest); const g = document.getElementById('goals'); g.classList.add('on');
-    clearTimeout(startIntro.t); startIntro.t = setTimeout(() => { if (!keys.Tab) g.classList.remove('on'); }, 5000);
+    setQuest(quest); showGoals(5000);
   });
 }
 function turnTo(obj, x, z, k) { let d = Math.atan2(x - obj.position.x, z - obj.position.z) - obj.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d)); obj.rotation.y += d * k; }
@@ -2180,7 +2203,7 @@ function frame() {
   window.__libFlames.forEach((f, i) => f.scale.set(.05 + Math.sin(t * 13 + i * 3) * .006, .1 + Math.sin(t * 17 + i) * .015, 1));
   window.__libLight.intensity = 5 + Math.sin(t * 7) * .35 + Math.sin(t * 13.3) * .2;
   LIB_BOOKS.forEach((b, i) => { b.glow.material.opacity = .25 + .15 * Math.sin(t * 2 + i * 1.7); });
-  if (!libSeen && p.x > CX1 + T + .3) { libSeen = true; sfx.chime(); toast('Kütüphane', 2200); }
+  if (!libSeen && p.x > CX1 + T + .3) { libSeen = true; if (Q[quest].id !== 'lib') toast('Kütüphane', 2200); }
   if (dlg.open && dlg.at && Math.hypot(p.x - dlg.at.x, p.z - dlg.at.z) > 2.5) closeDialog();
   // corridor torches + drifting clouds
   for (const tc of torches) { tc.f.scale.set(.15 + Math.sin(t * 13 + tc.ph) * .015, .3 + Math.sin(t * 17 + tc.ph) * .04, 1); tc.halo.material.opacity = .4 + Math.sin(t * 9 + tc.ph) * .06; }
@@ -2245,19 +2268,19 @@ function frame() {
   lumosGlow.position.copy(tipW); lumosGlow.material.opacity = lumosAmt * .8; lumosGlow.scale.setScalar(.12 + lumosAmt * .05 + Math.sin(t * 15) * .01);
 
   // corridor / terrace quests
-  if (quest === 4 && p.z > S + T + .4) { setQuest(5); sfx.chime(); toast('Ortak koridor', 2200); }
-  if (quest === 5 && p.x < CX0 - 1) { setQuest(6); sfx.chime(); toast('Bulutların üstünde bir teras…', 3200); }
-  // window quest
-  if (quest === 2 && Math.hypot(p.x - WIN.cx, p.z + S) < 1.35) { setQuest(3); sfx.chime(); toast('Kulen bulutların çok üstünde…', 3200); document.getElementById('qTitle').textContent = 'Kule odası'; }
+  // one-time place names + the library step
+  const seen = frame.seen || (frame.seen = {});
+  if (!seen.corr && p.z > S + T + .4 && p.x < CX1) { seen.corr = 1; toast('Ortak koridor', 2200); }
+  if (!seen.terr && p.x < CX0 - 1) { seen.terr = 1; toast('Bulutların üstünde bir teras…', 3200); }
+  if (!seen.win && Math.hypot(p.x - WIN.cx, p.z + S) < 1.35) { seen.win = 1; toast('Kulen bulutların çok üstünde…', 3200); }
+  if (Q[quest].id === 'lib' && p.x > CX1 + T + .3) completeQuest('lib');
 
   // hint
   const hk = document.getElementById('hKey'), ht = document.getElementById('hText');
   if (++hintTick % 6 === 0) hintAct = currentAction();
   if (dlg.open) { hk.textContent = 'E'; ht.textContent = (dlg.i < dlg.lines.length - 1 ? 'Devam' : 'Kapat') + (dlg.who === 'intro' ? '  ·  Esc: atla' : ''); }
   else if (hintAct) { hk.textContent = 'E'; ht.textContent = hintAct.label; }
-  else if (quest === 1) { hk.textContent = 'F'; ht.textContent = 'Lumos'; }
-  else if (quest === 3) { hk.textContent = 'Sol tık'; ht.textContent = 'Güç topu at'; }
-  else if (quest === 4) { hk.textContent = 'E'; ht.textContent = 'Kapıya git ve aç'; }
+  else if (Q[quest].id === 'prof' && p.z < S) { hk.textContent = 'E'; ht.textContent = 'Kapıyı aç, koridordan terasa git'; }
   else { hk.textContent = 'Tab'; ht.textContent = 'Bölümün hedeflerini görmek için bas'; }
 
   rayMat.uniforms.uTime.value = t; grade.uniforms.uTime.value = t;
@@ -2274,7 +2297,7 @@ renderer.compileAsync(scene, camera).catch(() => {}).then(() => {
 fetch('version.json', { cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(v => {
   if (v) document.getElementById('ver').textContent = `sürüm ${v.sha.slice(0, 7)} · ${v.branch} · ${v.time}` + (LITE ? ' · hafif mod' : '');
 }).catch(() => {});
-window.__dbg = { libDoor, LIB_BOOKS, npcs, STUDENTS, updateNPC, startIntro, LITE, chooseLook, look, chooseHouse, prof, dlg, scene, camera, wiz, renderer, frame, doorState, setQuest, curtains, getDrag: () => curtainDrag, lights, interact, currentAction, grab, release, aimHit, aimItem, getHeld: () => held, fixSize: (w, h) => { camera.aspect = w / h; camera.updateProjectionMatrix(); renderer.setSize(w, h, false); composer.setSize(w, h); }, getYaw: () => yaw, setView: (y, p, d) => { yaw = y; pitch = p; dist = d; camPos.set(0, 0, 0); }, start: () => { started = true; document.getElementById('start')?.remove(); } };
+window.__dbg = { completeQuest, getQuest: () => Q[quest].id, libDoor, LIB_BOOKS, npcs, STUDENTS, updateNPC, startIntro, LITE, chooseLook, look, chooseHouse, prof, dlg, scene, camera, wiz, renderer, frame, doorState, setQuest, curtains, getDrag: () => curtainDrag, lights, interact, currentAction, grab, release, aimHit, aimItem, getHeld: () => held, fixSize: (w, h) => { camera.aspect = w / h; camera.updateProjectionMatrix(); renderer.setSize(w, h, false); composer.setSize(w, h); }, getYaw: () => yaw, setView: (y, p, d) => { yaw = y; pitch = p; dist = d; camPos.set(0, 0, 0); }, start: () => { started = true; document.getElementById('start')?.remove(); } };
 </script>
 </body>
 </html>
