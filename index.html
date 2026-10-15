@@ -36,7 +36,7 @@
   #start .ctl{margin-top:26px;display:flex;gap:22px;font-family:Nunito,sans-serif;font-size:15px;opacity:.8;flex-wrap:wrap;justify-content:center}
   #start .ctl span{display:flex;gap:8px;align-items:center}
   #dlg{position:fixed;left:50%;bottom:86px;transform:translate(-50%,8px);width:min(620px,calc(100vw - 32px));box-sizing:border-box;padding:18px 24px 14px;border-radius:12px;background:rgba(18,12,8,.78);backdrop-filter:blur(6px);border:1px solid rgba(245,199,106,.35);color:#f4efe4;font-family:Nunito,sans-serif;font-size:18px;line-height:1.45;opacity:0;transition:.25s;pointer-events:none}
-  #dlg.on{opacity:1;transform:translate(-50%,0)}
+  #dlg.on{opacity:1;transform:translate(-50%,0);pointer-events:auto;cursor:pointer}
   #dlg b{display:block;font-family:'Cormorant Garamond',serif;font-weight:600;font-size:23px;color:#f5c76a;margin-bottom:6px}
   #dlg small{display:block;text-align:right;opacity:.6;font-size:13px;margin-top:8px}
   #houses{display:flex;gap:12px;margin:22px 0 4px;flex-wrap:wrap;justify-content:center}
@@ -70,7 +70,7 @@
 <div id="goals"><h3>Bölüm hedefleri</h3><div id="g0">Masadaki asanı al</div><div id="g1">Lumos! Asanı yak</div><div id="g2">Pencereden dışarı bak</div><div id="g3">Bir şeyleri büyüyle dağıt</div><div id="g4">Koridora çık</div><div id="g5">Terasa çık</div></div>
 <div id="hint"><span class="key" id="hKey">Tab</span><span id="hText">Bölümün hedeflerini görmek için bas</span></div>
 <div id="toast"></div>
-<div id="dlg"><b>Profesör Aldric Kuzgunay</b><span id="dlgText"></span><small id="dlgMore"></small></div>
+<div id="dlg"><b id="dlgName"></b><span id="dlgText"></span><small id="dlgMore"></small></div>
 <div id="ver">yerel sürüm</div>
 <div id="cross"></div>
 <div id="start">
@@ -1470,6 +1470,7 @@ addEventListener('keydown', e => {
   keys[e.code] = true;
   if (!started) { if ((e.code === 'Enter' || e.code === 'NumpadEnter') && e.target.tagName !== 'BUTTON') startGame(); return; }
   if (e.code.startsWith('Arrow')) e.preventDefault();
+  if (e.code === 'Escape' && dlg.open) closeDialog();
   if (e.code === 'Tab') { e.preventDefault(); document.getElementById('goals').classList.add('on'); }
   if (e.code === 'KeyE') interact();
   if (e.code === 'KeyF') toggleLumos();
@@ -1486,10 +1487,12 @@ function startGame() {
   if (started) return;
   if (!house) { const a = document.getElementById('houseAsk'); a.textContent = 'Önce bir bina seç!'; a.style.color = '#f5c76a'; return; }
   started = true; sfx.init(); const s = document.getElementById('start'); s.style.opacity = 0; setTimeout(() => s.remove(), 600);
+  setTimeout(startIntro, 700);
   cvs.requestPointerLock?.();
 }
 cvs.addEventListener('mousedown', e => {
   if (!started) return;
+  if (dlg.open && e.button === 0) { nextLine(); return; }
   if (document.pointerLockElement === cvs) { if (e.button === 0) castSpell(); if (e.button === 2) grab(); }
   else { cvs.requestPointerLock?.(); dragging = true; }
 });
@@ -1812,7 +1815,15 @@ const PROF_LINES = [
   'Bulutların bu kadar üstünde rüzgâr bile fısıldayarak eser; iyi dinlersen sana büyünün sırlarını anlatır.',
   'Asanı özenle kullan ve merakını hiç kaybetme. Haydi, şatoyu keşfetmeye devam et!',
 ];
-const dlg = { open: false, i: 0, timer: 0 };
+// shared dialogue box: who = 'prof' (terrace NPC) or 'intro' (headmaster's welcome after the start screen)
+const dlg = { open: false, i: 0, timer: 0, who: null, lines: [], onEnd: null };
+const HEAD_NAME = 'Müdür Orhun Gökbilge';
+const introLines = () => [
+  `Bulut Kulesi Büyücülük Okulu'na hoş geldin, sevgili öğrencim! Ben ${HEAD_NAME}; ${HOUSES[house || 'aslan'].name} binası seni aramızda görmekten mutluluk duyuyor.`,
+  'Bu kule odası artık senin. Yolun uzundu, biliyorum; ama meraklı bir büyücünün dinlenmeye pek sabrı olmaz.',
+  'Önce masandaki asanı al. Unutma: asayı büyücü seçmez, asa büyücüyü seçer.',
+  'Sonra kapıdan çıkıp koridoru geç, terasa çık ve Profesör Aldric ile tanış. Kulenin sırlarını sana o öğretecek. İyi şanslar!',
+];
 function profRecolor(img) {
   const robe = lightLUT(.39, .55, .02, .3), cape = lightLUT(.11, .6, .1, .35);   // emerald robe/hat, old-gold cape
   return paintAtlas(img, (sx, sy, c) => isRobe(c) ? robe : isCape(c) ? cape : null);
@@ -1849,31 +1860,47 @@ function pickProfTarget() {
   }
   prof.target.copy(prof.root.position);
 }
-function talkToProf() {
-  dlg.open = true; dlg.i = -1; nextLine(); sfx.chime();
+function openDialog(who, name, lines, onEnd) {
+  Object.assign(dlg, { open: true, i: -1, who, lines, onEnd });
+  document.getElementById('dlgName').textContent = name;
+  nextLine(); sfx.chime();
+}
+function talkToProf() { openDialog('prof', 'Profesör Aldric Kuzgunay', PROF_LINES, () => { prof.wait = 2; }); }
+function closeDialog() {
+  dlg.open = false; document.getElementById('dlg').classList.remove('on');
+  const f = dlg.onEnd; dlg.onEnd = null; dlg.who = null; f?.();
 }
 function nextLine() {
+  if (!dlg.open) return;
   dlg.i++;
-  const el = document.getElementById('dlg');
-  if (dlg.i >= PROF_LINES.length) { dlg.open = false; el.classList.remove('on'); prof.wait = 2; return; }
-  document.getElementById('dlgText').textContent = PROF_LINES[dlg.i];
-  document.getElementById('dlgMore').textContent = dlg.i < PROF_LINES.length - 1 ? 'E: devam' : 'E: kapat';
-  dlg.timer = 9; el.classList.add('on');
+  if (dlg.i >= dlg.lines.length) { closeDialog(); return; }
+  const last = dlg.i === dlg.lines.length - 1;
+  document.getElementById('dlgText').textContent = dlg.lines[dlg.i];
+  document.getElementById('dlgMore').textContent = (last ? 'E / tık: kapat' : 'E / tık: devam') + (dlg.who === 'intro' ? '  ·  Esc: atla' : '');
+  dlg.timer = dlg.who === 'prof' ? 9 : Infinity; document.getElementById('dlg').classList.add('on');
+}
+document.getElementById('dlg').addEventListener('click', e => { e.stopPropagation(); nextLine(); });
+function startIntro() {
+  openDialog('intro', HEAD_NAME, introLines(), () => {
+    // hand over to the first chapter goal
+    setQuest(quest); const g = document.getElementById('goals'); g.classList.add('on');
+    clearTimeout(startIntro.t); startIntro.t = setTimeout(() => { if (!keys.Tab) g.classList.remove('on'); }, 5000);
+  });
 }
 function updateProf(dt) {
   if (!prof.ready) return;
   const pp = prof.root.position, wp = wiz.root.position;
   const toWiz = Math.hypot(wp.x - pp.x, wp.z - pp.z);
-  if (dlg.open) {
+  if (dlg.open && dlg.who === 'prof') {
     // look at the player while talking; walking away or waiting long enough moves the dialogue on
     const want = Math.atan2(wp.x - pp.x, wp.z - pp.z); let d = want - prof.root.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d));
     prof.root.rotation.y += d * Math.min(1, dt * 5);
     dlg.timer -= dt;
-    if (toWiz > 3.5) { dlg.i = PROF_LINES.length - 1; nextLine(); }
+    if (toWiz > 3.5) closeDialog();
     else if (dlg.timer <= 0) nextLine();
   }
   let moving = false;
-  if (!dlg.open) {
+  if (dlg.who !== 'prof') {
     if (prof.wait > 0) prof.wait -= dt;
     else {
       const dx = prof.target.x - pp.x, dz = prof.target.z - pp.z, dd = Math.hypot(dx, dz);
@@ -1918,6 +1945,7 @@ function frame() {
     if (keys.KeyS) inp.sub(f);
     if (keys.KeyD) inp.add(rgt);
     if (keys.KeyA) inp.sub(rgt);
+    if (dlg.who === 'intro') inp.set(0, 0);   // stand still while the headmaster speaks
     // arrow keys turn / tilt the camera (for browsers without pointer lock); same directions as the mouse
     yaw += ((keys.ArrowLeft ? 1 : 0) - (keys.ArrowRight ? 1 : 0)) * 2.2 * dt;
     pitch = THREE.MathUtils.clamp(pitch + ((keys.ArrowDown ? 1 : 0) - (keys.ArrowUp ? 1 : 0)) * 1.2 * dt, -.25, 1.15);
@@ -2086,7 +2114,7 @@ function frame() {
   // hint
   const hk = document.getElementById('hKey'), ht = document.getElementById('hText');
   if (++hintTick % 6 === 0) hintAct = currentAction();
-  if (dlg.open) { hk.textContent = 'E'; ht.textContent = dlg.i < PROF_LINES.length - 1 ? 'Devam' : 'Kapat'; }
+  if (dlg.open) { hk.textContent = 'E'; ht.textContent = (dlg.i < dlg.lines.length - 1 ? 'Devam' : 'Kapat') + (dlg.who === 'intro' ? '  ·  Esc: atla' : ''); }
   else if (hintAct) { hk.textContent = 'E'; ht.textContent = hintAct.label; }
   else if (quest === 1) { hk.textContent = 'F'; ht.textContent = 'Lumos'; }
   else if (quest === 3) { hk.textContent = 'Sol tık'; ht.textContent = 'Güç topu at'; }
@@ -2107,7 +2135,7 @@ renderer.compileAsync(scene, camera).catch(() => {}).then(() => {
 fetch('version.json', { cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(v => {
   if (v) document.getElementById('ver').textContent = `sürüm ${v.sha.slice(0, 7)} · ${v.branch} · ${v.time}` + (LITE ? ' · hafif mod' : '');
 }).catch(() => {});
-window.__dbg = { LITE, chooseLook, look, chooseHouse, prof, dlg, scene, camera, wiz, renderer, frame, doorState, setQuest, curtains, getDrag: () => curtainDrag, lights, interact, currentAction, grab, release, aimHit, aimItem, getHeld: () => held, fixSize: (w, h) => { camera.aspect = w / h; camera.updateProjectionMatrix(); renderer.setSize(w, h, false); composer.setSize(w, h); }, getYaw: () => yaw, setView: (y, p, d) => { yaw = y; pitch = p; dist = d; camPos.set(0, 0, 0); }, start: () => { started = true; document.getElementById('start')?.remove(); } };
+window.__dbg = { startIntro, LITE, chooseLook, look, chooseHouse, prof, dlg, scene, camera, wiz, renderer, frame, doorState, setQuest, curtains, getDrag: () => curtainDrag, lights, interact, currentAction, grab, release, aimHit, aimItem, getHeld: () => held, fixSize: (w, h) => { camera.aspect = w / h; camera.updateProjectionMatrix(); renderer.setSize(w, h, false); composer.setSize(w, h); }, getYaw: () => yaw, setView: (y, p, d) => { yaw = y; pitch = p; dist = d; camPos.set(0, 0, 0); }, start: () => { started = true; document.getElementById('start')?.remove(); } };
 </script>
 </body>
 </html>
