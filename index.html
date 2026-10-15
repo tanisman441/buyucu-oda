@@ -876,7 +876,7 @@ floorPlane(TX0, CX0 + .02, TZ0, TZ1, flagMat);
   });
   box(GX - .1, GX + .7, GZ - .9, GZ - .1);
   // benches, lamp posts, telescope
-  for (const [x, z, ry] of [[-14, 12.8, 0], [-21.5, 12.8, 0], [-14, -1.5, Math.PI]]) {
+  for (const [x, z, ry] of [[-16.6, 12.8, 0], [-21.5, 12.8, 0], [-14, -1.5, Math.PI]]) {
     const b = new THREE.Group(); b.position.set(x, 0, z); b.rotation.y = ry; scene.add(b);
     solid(mesh(meterBox(1.8, .12, .5), stoneMat, 0, .45, 0, b));
     for (const sx of [-1, 1]) solid(mesh(meterBox(.25, .4, .45), stoneMat, sx * .7, .2, 0, b));
@@ -884,7 +884,7 @@ floorPlane(TX0, CX0 + .02, TZ0, TZ1, flagMat);
   }
   const lampM = new THREE.MeshStandardMaterial({ color: 0x1c1a18, roughness: .4, metalness: .8 });
   window.__lamps = [];
-  for (const [x, z] of [[-12, 1], [-12, 11], [-23, 1], [-23, 11]]) {
+  for (const [x, z] of [[-12, 1], [-15.2, 10.6], [-23, 1], [-23, 11]]) {
     mesh(new THREE.CylinderGeometry(.06, .09, 2.6, 8), lampM, x, 1.3, z);
     mesh(new THREE.BoxGeometry(.28, .32, .28), lampM, x, 2.75, z);
     const gl = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, color: 0xffc070, opacity: .55 }));
@@ -899,7 +899,7 @@ floorPlane(TX0, CX0 + .02, TZ0, TZ1, flagMat);
   // loose crates and pumpkins to play with
   const crateT = canvasTex(256, 256, (g, w) => { g.fillStyle = '#8a6036'; g.fillRect(0, 0, w, w); g.strokeStyle = '#4a2e14'; g.lineWidth = 14; g.strokeRect(7, 7, w - 14, w - 14); g.beginPath(); g.moveTo(10, 10); g.lineTo(w - 10, w - 10); g.stroke(); const R = rng(2); for (let i = 0; i < 60; i++) { g.strokeStyle = `rgba(40,20,5,${R() * .3})`; g.lineWidth = 1; const y = R() * w; g.beginPath(); g.moveTo(0, y); g.lineTo(w, y + (R() - .5) * 6); g.stroke(); } });
   const crateM = new THREE.MeshStandardMaterial({ map: crateT, roughness: .8 });
-  [[-11.5, .3, 13.6, .6], [-12.2, .3, 13.9, .6], [-11.8, .9, 13.75, .6], [-25.4, .25, -3.6, .5]].forEach(([x, y, z, s]) => loose(mesh(new THREE.BoxGeometry(s, s, s), crateM, x, y, z), 5, 'wood'));
+  [[-14.9, .3, 14.6, .6], [-15.6, .3, 14.9, .6], [-15.25, .9, 14.75, .6], [-25.4, .25, -3.6, .5]].forEach(([x, y, z, s]) => loose(mesh(new THREE.BoxGeometry(s, s, s), crateM, x, y, z), 5, 'wood'));
   const pumpkinM = new THREE.MeshStandardMaterial({ color: 0xe0782a, roughness: .6 });
   [[-15.5, 8.8, .32], [-16.3, 9.4, .24], [-19.8, 2.4, .28]].forEach(([x, z, r]) => { const m = loose(mesh(new THREE.SphereGeometry(r, 18, 12), pumpkinM, x, r * .8, z), 3, 'wood'); m.scale.y = .8; });
 }
@@ -1424,6 +1424,110 @@ let classPivot = null, classSeen = false, boardIdx = 0;
   const cl = new THREE.PointLight(0xfff0d8, 6, 10, 2); cl.position.set(-6.2, 3.3, 10.4); scene.add(cl);
 }
 
+// ---- owlery: a small round tower in the terrace's north-east corner; door "Baykuşhane" (E), five owls on perches,
+// open windows onto the sky, straw and feathers on the floor; E by the low owl pets it (it flaps its wings)
+const OWL = { cx: -11.8, cz: 13.2, rIn: 1.9, rOut: 2.25, h: 4.2 };
+const owlDoor = { open: 0, target: 0 };
+const owlDoorBox = { x0: 0, x1: 0, z0: 0, z1: 0 };       // blocks the doorway while the door is shut (moved away when open)
+const owls = [];
+let owlPivot = null, owlSeen = false, petOwl = null;
+{
+  const { cx, cz, rIn, rOut, h } = OWL, rMid = (rIn + rOut) / 2, N = 26, seg = 2 * Math.PI * rOut / N + .04;
+  const doorA = -Math.PI / 2, wins = [Math.PI / 2, Math.PI / 2 - .55, Math.PI - .35];   // north / north-east / west: all open onto sky
+  const angDiff = (a, b) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
+  for (let i = 0; i < N; i++) {
+    const a = (i + .5) / N * Math.PI * 2, x = cx + Math.cos(a) * rMid, z = cz + Math.sin(a) * rMid;
+    const piece = (y0, y1) => { const m = solid(mesh(meterBox(seg, y1 - y0, rOut - rIn), stoneMat, x, (y0 + y1) / 2, z)); m.rotation.y = -a + Math.PI / 2; };
+    if (angDiff(a, doorA) < .3) { piece(2.15, h); continue; }                       // doorway (lintel above)
+    if (wins.some(w => angDiff(a, w) < .14)) { piece(0, 1.3); piece(2.4, h); continue; }   // window slit
+    piece(0, h);
+  }
+  for (let i = 0; i < N; i++) {                                                     // ring of colliders, open at the doorway
+    const a = (i + .5) / N * Math.PI * 2;
+    if (angDiff(a, doorA) >= .3) box(cx + Math.cos(a) * rMid - .3, cx + Math.cos(a) * rMid + .3, cz + Math.sin(a) * rMid - .3, cz + Math.sin(a) * rMid + .3);
+  }
+  // conical slate roof (visible from inside too) + a weather vane owl
+  const slate = new THREE.MeshStandardMaterial({ color: 0x3a4660, roughness: .55, side: THREE.DoubleSide });
+  solid(mesh(new THREE.ConeGeometry(rOut + .35, 2.8, 28, 1, true), slate, cx, h + 1.4, cz));
+  mesh(new THREE.CylinderGeometry(.03, .03, .9, 6), new THREE.MeshStandardMaterial({ color: 0x222 }), cx, h + 3.2, cz);
+  // floor: straw, scattered stalks and feathers
+  const strawT = canvasTex(256, 256, (g, w) => { g.fillStyle = '#b89a52'; g.fillRect(0, 0, w, w); const R = rng(91); for (let i = 0; i < 1600; i++) { g.strokeStyle = `rgba(${200 + R() * 50},${170 + R() * 50},${80 + R() * 40},.6)`; g.lineWidth = 1 + R(); const x = R() * w, y = R() * w, a = R() * 6; g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * 18, y + Math.sin(a) * 18); g.stroke(); } }, { rep: [2, 2] });
+  const fl = mesh(new THREE.CircleGeometry(rIn + .05, 32), new THREE.MeshStandardMaterial({ map: strawT, roughness: 1 }), cx, .012, cz); fl.rotation.x = -Math.PI / 2; fl.castShadow = false;
+  const R = rng(93), M = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
+  const stalks = new THREE.InstancedMesh(new THREE.CylinderGeometry(.006, .006, .22, 4), new THREE.MeshStandardMaterial({ color: 0xd8bc6a, roughness: 1 }), 220);
+  for (let i = 0; i < 220; i++) { const a = R() * 6.28, r = Math.sqrt(R()) * (rIn - .1); e.set(Math.PI / 2 + (R() - .5) * .3, R() * 6, 0); q.setFromEuler(e); M.compose(new THREE.Vector3(cx + Math.cos(a) * r, .02 + R() * .03, cz + Math.sin(a) * r), q, new THREE.Vector3(1, 1, 1)); stalks.setMatrixAt(i, M); }
+  scene.add(stalks);
+  const fg = new THREE.PlaneGeometry(.05, .16); fg.translate(0, .08, 0);
+  const feathers = new THREE.InstancedMesh(fg, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: .9, side: THREE.DoubleSide }), 30);
+  const fc = new THREE.Color();
+  for (let i = 0; i < 30; i++) { const a = R() * 6.28, r = Math.sqrt(R()) * (rIn - .2); e.set(-Math.PI / 2, 0, R() * 6); q.setFromEuler(e); M.compose(new THREE.Vector3(cx + Math.cos(a) * r, .03, cz + Math.sin(a) * r), q, new THREE.Vector3(1, 1, 1)); feathers.setMatrixAt(i, M); feathers.setColorAt(i, fc.setHSL(.08, .2, .55 + R() * .4)); }
+  scene.add(feathers);
+  // door (opens inward) + plaque
+  owlPivot = new THREE.Group(); owlPivot.position.set(cx - .55, 0, cz - rMid); scene.add(owlPivot);
+  const vt = canvasTex(256, 512, (g, w, hh) => { const RR = rng(61); for (let i = 0; i < 5; i++) { g.fillStyle = `hsl(${24 + RR() * 6},36%,${20 + RR() * 8}%)`; g.fillRect(i * w / 5, 0, w / 5, hh); g.fillStyle = 'rgba(10,5,2,.8)'; g.fillRect(i * w / 5, 0, 3, hh); } });
+  mesh(new THREE.BoxGeometry(1.08, 2.1, .07), new THREE.MeshStandardMaterial({ map: vt, roughness: .7 }), .54, 1.05, 0, owlPivot);
+  const iron = new THREE.MeshStandardMaterial({ color: 0x1e1c1a, roughness: .45, metalness: .8 });
+  for (const y of [.45, 1.6]) for (const z of [-.045, .045]) mesh(new THREE.BoxGeometry(1.0, .07, .02), iron, .54, y, z, owlPivot);
+  for (const z of [-.06, .06]) mesh(new THREE.TorusGeometry(.07, .012, 8, 20), iron, .9, 1.0, z, owlPivot);
+  const pt = canvasTex(448, 112, (g, w, hh) => {
+    g.fillStyle = '#2a1a0e'; g.fillRect(0, 0, w, hh); g.strokeStyle = '#c8963a'; g.lineWidth = 6; g.strokeRect(6, 6, w - 12, hh - 12);
+    g.fillStyle = '#f0c870'; g.font = '600 56px "Cormorant Garamond", Georgia, serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('Baykuşhane', w / 2, hh / 2 + 4);
+  });
+  mesh(new THREE.BoxGeometry(1.26, .34, .06), woodDark, cx, 2.55, cz - rOut - .03);
+  const plaque = mesh(new THREE.PlaneGeometry(1.2, .3), new THREE.MeshStandardMaterial({ map: pt, roughness: .6 }), cx, 2.55, cz - rOut - .065); plaque.rotation.y = Math.PI; plaque.castShadow = false;
+  // perches (radial beams from the wall) with owls: [angle, height, scale, body colour, belly colour]
+  const OWL_LIST = [[Math.PI / 2, 1.05, 1.0, 0x7a5a3a, 0xd8c4a0], [Math.PI / 2 + .9, 1.75, .85, 0xeeeae2, 0xffffff], [Math.PI / 2 - .9, 2.25, .9, 0x8a8580, 0xcfc8bc], [Math.PI + .5, 2.75, 1.15, 0xa8743a, 0xe8c890], [.1 - .5, 2.95, .75, 0x4a3a2a, 0x8a7458]];
+  const wood = woodDark;
+  for (const [a, y, sc, col, belly] of OWL_LIST) {
+    const ox = cx + Math.cos(a) * (rIn - .45), oz = cz + Math.sin(a) * (rIn - .45);
+    const beam = mesh(new THREE.BoxGeometry(.7, .07, .07), wood, cx + Math.cos(a) * (rIn - .3), y, cz + Math.sin(a) * (rIn - .3)); beam.rotation.y = -a;
+    const o = new THREE.Group(); o.position.set(ox, y + .035, oz); o.rotation.y = Math.atan2(cx - ox, cz - oz); o.scale.setScalar(sc); scene.add(o);
+    const bodyM = new THREE.MeshStandardMaterial({ color: col, roughness: .9 }), bellyM = new THREE.MeshStandardMaterial({ color: belly, roughness: .95 });
+    const body = mesh(new THREE.SphereGeometry(.13, 16, 12), bodyM, 0, .15, 0, o); body.scale.set(1, 1.25, .95);
+    mesh(new THREE.SphereGeometry(.1, 14, 10), bellyM, 0, .14, .05, o).scale.set(.9, 1.15, .6);
+    const head = new THREE.Group(); head.position.set(0, .33, 0); o.add(head);
+    mesh(new THREE.SphereGeometry(.11, 16, 12), bodyM, 0, 0, 0, head).scale.set(1.1, .95, 1);
+    mesh(new THREE.CircleGeometry(.075, 16), bellyM, 0, 0, .1, head).scale.set(1.5, 1, 1);
+    for (const sx of [-1, 1]) {
+      mesh(new THREE.SphereGeometry(.032, 10, 8), new THREE.MeshStandardMaterial({ color: 0xf5c040, roughness: .3, emissive: 0x3a2400 }), sx * .045, .015, .095, head);
+      mesh(new THREE.SphereGeometry(.016, 8, 6), new THREE.MeshBasicMaterial({ color: 0x080808 }), sx * .045, .015, .122, head);
+      const ear = mesh(new THREE.ConeGeometry(.025, .07, 6), bodyM, sx * .07, .1, 0, head); ear.rotation.z = -sx * .4;
+    }
+    const beak = mesh(new THREE.ConeGeometry(.018, .05, 6), new THREE.MeshStandardMaterial({ color: 0xd8a040, roughness: .5 }), 0, -.025, .115, head); beak.rotation.x = Math.PI / 2 + .5;
+    const wings = [-1, 1].map(sx => { const w = new THREE.Group(); w.position.set(sx * .12, .22, 0); o.add(w); const wm = mesh(new THREE.SphereGeometry(.09, 12, 8), bodyM, 0, -.08, -.01, w); wm.scale.set(.35, 1.1, .8); return w; });
+    for (const sx of [-1, 1]) mesh(new THREE.BoxGeometry(.04, .02, .05), new THREE.MeshStandardMaterial({ color: 0x6a5a30 }), sx * .05, 0, .04, o);
+    owls.push({ o, head, wings, flap: 0, ph: owls.length * 1.7, baseY: y + .035 });
+  }
+  petOwl = owls[0];
+  petOwl.spot = new THREE.Vector3(cx + Math.cos(Math.PI / 2) * (rIn - 1.25), 0, cz + Math.sin(Math.PI / 2) * (rIn - 1.25));
+  const ol = new THREE.PointLight(0xfff0d8, 4, 7, 2); ol.position.set(cx, 3.0, cz); scene.add(ol);
+  colliders.push(owlDoorBox);
+}
+const OWL_OUT = new THREE.Vector3(OWL.cx, 0, OWL.cz - OWL.rOut - .7), OWL_IN = new THREE.Vector3(OWL.cx, 0, OWL.cz - OWL.rIn + .7);
+const OWL_CLEAR = { x0: OWL.cx - OWL.rOut - .6, x1: OWL.cx + OWL.rOut + .6, z0: OWL.cz - OWL.rOut - 1.2, z1: OWL.cz + OWL.rOut + .6 };
+function updateOwls(t, dt, p) {
+  owlDoor.open += (owlDoor.target - owlDoor.open) * Math.min(1, dt * 3.2);
+  owlPivot.rotation.y = -owlDoor.open * 1.6;
+  const shut = owlDoor.open < .8, rMid = (OWL.rIn + OWL.rOut) / 2;
+  Object.assign(owlDoorBox, shut ? { x0: OWL.cx - .8, x1: OWL.cx + .8, z0: OWL.cz - OWL.rOut, z1: OWL.cz - OWL.rIn + .02 } : { x0: 1e9, x1: 1e9, z0: 1e9, z1: 1e9 });
+  for (const w of owls) {
+    w.head.rotation.y = Math.sin(t * .4 + w.ph) * .7 * (Math.sin(t * .13 + w.ph) > .3 ? 1 : .2);
+    if (w.flap > 0) {
+      w.flap = Math.max(0, w.flap - dt);
+      const k = Math.sin(t * 28) * .9 * Math.min(1, w.flap);
+      w.wings[0].rotation.z = -.2 - Math.abs(k); w.wings[1].rotation.z = .2 + Math.abs(k);
+      w.o.position.y = w.baseY + Math.abs(Math.sin(t * 9)) * .06 * Math.min(1, w.flap);
+    } else { w.wings[0].rotation.z = w.wings[1].rotation.z = 0; w.o.position.y = w.baseY; }
+  }
+  if (!owlSeen && Math.hypot(p.x - OWL.cx, p.z - OWL.cz) < OWL.rIn - .3) { owlSeen = true; sfx.chime(); toast('Baykuşhane', 2600); }
+}
+function petTheOwl() {
+  petOwl.flap = 1.6;
+  const c = petOwl.o.position.clone().setY(petOwl.baseY + .3);
+  for (let i = 0; i < 14; i++) spark(c, new THREE.Vector3((Math.random() - .5) * 1.2, Math.random() * 1.2, (Math.random() - .5) * 1.2), .6 + Math.random() * .5, .035, i % 2 ? 0xfff6e8 : 0xd8c4a0);
+  sfx.swish(c); toast('Baykuş mutlu oldu!', 2000);
+}
+
 // ---- where the wizard may stand (union of rectangles) ----
 const zones = [
   { x0: -S, x1: S, z0: -S, z1: S },                                      // dormitory
@@ -1439,6 +1543,7 @@ const zones = [
   { x0: DORM.x0, x1: DORM.x1, z0: DORM.z0, z1: DORM.z1 },                // house dormitory
   { x0: CD.x0, x1: CD.x1, z0: CZ1 - .6, z1: CZ1 + T + .6, mz: 0, gate: classDoor }, // classroom door
   { x0: CLASS.x0, x1: CLASS.x1, z0: CLASS.z0, z1: CLASS.z1 },            // spell classroom
+  // (the owlery stands inside the terrace rectangle: its ring of colliders + owlDoorBox keep you out of the walls)
 ];
 function walkable(x, z, r) {
   for (const zn of zones) {
@@ -2064,6 +2169,11 @@ function currentAction() {
     doorState.target = doorState.target ? 0 : 1; sfx.door(new THREE.Vector3(-1.5, 1.2, S), doorState.target);
   } };
   { const k = nearStar(); if (k >= 0) return { label: 'Yıldızı topla', run: () => { faceTo(new THREE.Vector3(STARS[k][0], 0, STARS[k][2])); playOnce('pick', () => {}); collectStar(k); } }; }
+  if (near(OWL_OUT, 1.2) || near(OWL_IN, 1.0)) return { label: owlDoor.target ? 'Baykuşhane kapısını kapat' : 'Baykuşhane kapısını aç', run: () => {
+    faceTo(new THREE.Vector3(OWL.cx, 0, OWL.cz - OWL.rIn)); playOnce('use');
+    owlDoor.target = owlDoor.target ? 0 : 1; sfx.door(new THREE.Vector3(OWL.cx, 1.2, OWL.cz - OWL.rIn), owlDoor.target);
+  } };
+  if (near(petOwl.spot, .9)) return { label: 'Baykuşu sev', run: () => { faceTo(petOwl.o.position); playOnce('use'); petTheOwl(); } };
   if (near(CLASS_OUT, 1.3) || near(CLASS_IN, 1.3)) return { label: classDoor.target ? 'Derslik kapısını kapat' : 'Derslik kapısını aç', run: () => {
     faceTo(new THREE.Vector3(CD_XC, 0, CZ1 + T / 2)); playOnce('use');
     classDoor.target = classDoor.target ? 0 : 1; sfx.door(new THREE.Vector3(CD_XC, 1.2, CZ1 + T / 2), classDoor.target);
@@ -2379,7 +2489,7 @@ function dressNPC(n, gltf, model, tex, scale, hide) {
 }
 
 const prof = makeNPC({
-  name: 'Profesör Aldric Kuzgunay', title: 'Profesörle konuş', pos: [-14, 0, 3], avoid: [TARGET_CLEAR],
+  name: 'Profesör Aldric Kuzgunay', title: 'Profesörle konuş', pos: [-14, 0, 3], avoid: [TARGET_CLEAR, OWL_CLEAR],
   box: { x0: TX0 + 1.5, x1: TX1 - 1.5, z0: TZ0 + 1.5, z1: TZ1 - 1.5 },
   lines: [
     'Ah, yeni bir yüz! Ben Profesör Aldric Kuzgunay, bu kulede Göksel Büyüler dersini veririm.',
@@ -2676,6 +2786,7 @@ function frame() {
   updateHall(t, dt);
   updatePractice(t, dt, p);
   updateStars(t);
+  updateOwls(t, dt, p);
   classDoor.open += (classDoor.target - classDoor.open) * Math.min(1, dt * 3.2);
   classPivot.rotation.y = -classDoor.open * 1.75;
   if (!classSeen && p.z > CLASS.z0 + .3 && p.x < CLASS.x1 && p.x > CLASS.x0) { classSeen = true; sfx.chime(); toast('Büyü Sınıfı', 2600); }
@@ -2785,7 +2896,7 @@ renderer.compileAsync(scene, camera).catch(() => {}).then(() => {
 fetch('version.json', { cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(v => {
   if (v) document.getElementById('ver').textContent = `sürüm ${v.sha.slice(0, 7)} · ${v.branch} · ${v.time}` + (LITE ? ' · hafif mod' : '');
 }).catch(() => {});
-window.__dbg = { STARS, starState, collide: (x, z) => collide(x, z), walkable, classDoor, CLASS_BOARD_SPOT, dummies, practice, castSpell, giveWand: () => { hasWand = true; }, dormDoor, BED_SPOT, isResting: () => resting, hallDoor, completeQuest, getQuest: () => Q[quest].id, libDoor, LIB_BOOKS, npcs, STUDENTS, updateNPC, startIntro, LITE, chooseLook, look, chooseHouse, prof, dlg, scene, camera, wiz, renderer, frame, doorState, setQuest, curtains, getDrag: () => curtainDrag, lights, interact, currentAction, grab, release, aimHit, aimItem, getHeld: () => held, fixSize: (w, h) => { camera.aspect = w / h; camera.updateProjectionMatrix(); renderer.setSize(w, h, false); composer.setSize(w, h); }, getYaw: () => yaw, setView: (y, p, d) => { yaw = y; pitch = p; dist = d; camPos.set(0, 0, 0); }, start: () => { started = true; document.getElementById('start')?.remove(); } };
+window.__dbg = { owlDoor, OWL, owls, petOwl: () => petOwl, STARS, starState, collide: (x, z) => collide(x, z), walkable, classDoor, CLASS_BOARD_SPOT, dummies, practice, castSpell, giveWand: () => { hasWand = true; }, dormDoor, BED_SPOT, isResting: () => resting, hallDoor, completeQuest, getQuest: () => Q[quest].id, libDoor, LIB_BOOKS, npcs, STUDENTS, updateNPC, startIntro, LITE, chooseLook, look, chooseHouse, prof, dlg, scene, camera, wiz, renderer, frame, doorState, setQuest, curtains, getDrag: () => curtainDrag, lights, interact, currentAction, grab, release, aimHit, aimItem, getHeld: () => held, fixSize: (w, h) => { camera.aspect = w / h; camera.updateProjectionMatrix(); renderer.setSize(w, h, false); composer.setSize(w, h); }, getYaw: () => yaw, setView: (y, p, d) => { yaw = y; pitch = p; dist = d; camPos.set(0, 0, 0); }, start: () => { started = true; document.getElementById('start')?.remove(); } };
 </script>
 </body>
 </html>
