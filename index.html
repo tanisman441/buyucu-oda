@@ -39,6 +39,11 @@
   #dlg.on{opacity:1;transform:translate(-50%,0)}
   #dlg b{display:block;font-family:'Cormorant Garamond',serif;font-weight:600;font-size:23px;color:#f5c76a;margin-bottom:6px}
   #dlg small{display:block;text-align:right;opacity:.6;font-size:13px;margin-top:8px}
+  #houses{display:flex;gap:12px;margin:22px 0 4px;flex-wrap:wrap;justify-content:center}
+  #houses button{min-width:112px;padding:10px 16px;border-radius:10px;border:2px solid rgba(244,239,228,.35);background:rgba(0,0,0,.35);color:#f4efe4;font:700 16px Nunito,sans-serif;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px;transition:.15s}
+  #houses button i{display:block;width:44px;height:10px;border-radius:5px}
+  #houses button:hover{border-color:rgba(244,239,228,.75)}
+  #houses button.sel{border-color:#f5c76a;background:rgba(245,199,106,.18);box-shadow:0 0 14px rgba(245,199,106,.45)}
   #load{position:fixed;inset:0;background:#000;color:#f4efe4;display:flex;align-items:center;justify-content:center;font-family:'Cormorant Garamond',serif;font-size:28px;z-index:9;transition:opacity .8s}
 </style>
 <script type="importmap">
@@ -62,7 +67,9 @@
 <div id="cross"></div>
 <div id="start">
   <h1>Büyücünün Odası</h1>
-  <p>Başlamak için tıkla</p>
+  <p id="houseAsk">Binanı seç</p>
+  <div id="houses"></div>
+  <p id="startTxt" style="visibility:hidden">Başlamak için tıkla</p>
   <div class="ctl">
     <span><b class="key">W A S D</b> yürü</span>
     <span><b class="key">Shift</b> koş</span>
@@ -1209,24 +1216,49 @@ function syncPhysics(dt) {
   }
 }
 
+// ---------------------------------------------------------------- houses (start screen choice, remembered in localStorage)
+// cape = house colour, robe = near-black tinted toward it, scarf stripes = the two house colours
+const HOUSES = {
+  aslan:  { name: 'Aslan',  hue: .995, sat: .78, l0: .18, a: '#7c1016', b: '#d5a03a' },
+  kartal: { name: 'Kartal', hue: .62,  sat: .7,  l0: .14, a: '#1b2f6b', b: '#b07a3a' },
+  porsuk: { name: 'Porsuk', hue: .13,  sat: .85, l0: .3,  a: '#d9a91c', b: '#1a1a1a' },
+  yilan:  { name: 'Yılan',  hue: .38,  sat: .65, l0: .1,  a: '#1a5c33', b: '#b8bcc0' },
+};
+let house = null;
+try { const v = localStorage.getItem('buyucu-bina'); if (HOUSES[v]) house = v; } catch (e) {}
+function chooseHouse(k) {
+  house = k;
+  try { localStorage.setItem('buyucu-bina', k); } catch (e) {}
+  for (const b of document.querySelectorAll('#houses button')) b.classList.toggle('sel', b.dataset.k === k);
+  document.getElementById('houseAsk').textContent = 'Binan: ' + HOUSES[k].name + ' (değiştirmek için başka birine tıkla)';
+  document.getElementById('startTxt').style.visibility = 'visible';
+  applyHouse();
+}
+for (const [k, h] of Object.entries(HOUSES)) {
+  const b = document.createElement('button'); b.dataset.k = k;
+  b.innerHTML = `<i style="background:linear-gradient(90deg,${h.a} 50%,${h.b} 50%)"></i>${h.name}`;
+  b.addEventListener('click', e => { e.stopPropagation(); chooseHouse(k); });
+  document.getElementById('houses').appendChild(b);
+}
+
 // ---------------------------------------------------------------- character
 // KayKit "Mage" (CC0, Kay Lousberg) restyled as a young Hogwarts student:
 // hat hidden, robe recoloured black, cape scarlet, plus round glasses, scar and a house scarf.
 const MODEL_SCALE = .64;
-const wiz = { root: new THREE.Group(), mixer: null, act: {}, ready: false, wand: null, tip: null, oneShot: null, tails: [] };
+const wiz = { root: new THREE.Group(), mixer: null, act: {}, ready: false, wand: null, tip: null, oneShot: null, tails: [], bodyMats: [], baseImg: null };
 scene.add(wiz.root);
 wiz.root.position.set(.4, 0, 1.4);
 wiz.root.rotation.y = Math.PI;
 
-function recolor(img) {
+function recolor(img, hs = HOUSES[house || 'aslan']) {
   const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
   const g = c.getContext('2d'); g.drawImage(img, 0, 0);
   const d = g.getImageData(0, 0, c.width, c.height), px = d.data, col = new THREE.Color(), hsl = {};
   for (let i = 0; i < px.length; i += 4) {
     col.setRGB(px[i] / 255, px[i + 1] / 255, px[i + 2] / 255, THREE.LinearSRGBColorSpace); col.getHSL(hsl, THREE.LinearSRGBColorSpace);
     const h = hsl.h * 360;
-    if (h > 225 && h < 290 && hsl.s > .12) col.setHSL(.68, .12, .025 + hsl.l * .17, THREE.LinearSRGBColorSpace);         // purple robe -> black wool
-    else if (h > 300 && h < 345 && hsl.s > .4) col.setHSL(.995, .78, .18 + hsl.l * .35, THREE.LinearSRGBColorSpace);     // magenta cape -> scarlet
+    if (h > 225 && h < 290 && hsl.s > .12) col.setHSL(hs.hue, .3, .025 + hsl.l * .17, THREE.LinearSRGBColorSpace);       // purple robe -> house-tinted black wool
+    else if (h > 300 && h < 345 && hsl.s > .4) col.setHSL(hs.hue, hs.sat, hs.l0 + hsl.l * .35, THREE.LinearSRGBColorSpace); // magenta cape -> house colour
     else continue;
     px[i] = col.r * 255; px[i + 1] = col.g * 255; px[i + 2] = col.b * 255;
   }
@@ -1254,12 +1286,12 @@ function dressUp(model) {
   scar.position.set(.14, .55, .5); head.add(scar); wiz.scar = scar;
   // house scarf
   const st = stripes(10, '#7c1016', '#d5a03a'); st.repeat.set(6, 1);
-  const scarfM = new THREE.MeshPhysicalMaterial({ map: st, roughness: .95, sheen: 1, sheenColor: new THREE.Color(0xffc8a0), sheenRoughness: .6 });
+  const scarfM = wiz.scarfM = new THREE.MeshPhysicalMaterial({ map: st, roughness: .95, sheen: 1, sheenColor: new THREE.Color(0xffc8a0), sheenRoughness: .6 });
   const ring = new THREE.Mesh(new THREE.TorusGeometry(.35, .085, 16, 40), scarfM); ring.rotation.x = Math.PI / 2;
   ring.scale.set(1, .9, .75);
   const scarf = new THREE.Group(); scarf.add(ring);
   const tt = stripes(10, '#7c1016', '#d5a03a'); tt.repeat.set(1, 1.6);
-  const tailM = new THREE.MeshPhysicalMaterial({ map: tt, roughness: .95, sheen: 1, sheenColor: new THREE.Color(0xffc8a0) });
+  const tailM = wiz.tailM = new THREE.MeshPhysicalMaterial({ map: tt, roughness: .95, sheen: 1, sheenColor: new THREE.Color(0xffc8a0) });
   for (const [x, z, len, ry] of [[-.17, .3, .75, .12], [.12, -.33, .95, Math.PI - .1]]) {
     const pv = new THREE.Group(); pv.position.set(x, -.02, z); pv.rotation.y = ry; scarf.add(pv);
     const tail = new THREE.Mesh(new RoundedBoxGeometry(.22, len, .06, 2, .025), tailM); tail.position.y = -len / 2; pv.add(tail);
@@ -1278,10 +1310,12 @@ new GLTFLoader().load('models/Mage.glb', gltf => {
   model.traverse(o => {
     if (!o.isMesh) return;
     o.castShadow = o.receiveShadow = true; o.frustumCulled = false;
-    if (!tex) tex = recolor(o.material.map.image);
+    if (!tex) { wiz.baseImg = o.material.map.image; tex = recolor(wiz.baseImg); }
     o.material = new THREE.MeshPhysicalMaterial({ map: tex, roughness: .78, sheen: .35, sheenColor: new THREE.Color(0xffe2cc), sheenRoughness: .7 });
+    wiz.bodyMats.push(o.material);
   });
   dressUp(model);
+  applyHouse();
   wiz.root.add(model);
   model.updateMatrixWorld(true);
   // the pack's wand sits in the right hand slot; mark its tip for Lumos
@@ -1302,6 +1336,16 @@ new GLTFLoader().load('models/Mage.glb', gltf => {
   wiz.ready = true;
   if (window.__dbg) window.__dbg.gltf = gltf;
 });
+// repaint robe, cape and scarf in the chosen house's colours (safe to call before the model has loaded)
+function applyHouse() {
+  if (!wiz.baseImg || !wiz.scarfM) return;
+  const hs = HOUSES[house || 'aslan'], old = wiz.bodyMats[0].map, tex = recolor(wiz.baseImg, hs);
+  for (const m of wiz.bodyMats) { m.map = tex; m.needsUpdate = true; }
+  if (old !== tex) old.dispose();
+  for (const [m, rx, ry] of [[wiz.scarfM, 6, 1], [wiz.tailM, 1, 1.6]]) {
+    const st = stripes(10, hs.a, hs.b); st.repeat.set(rx, ry); m.map.dispose(); m.map = st; m.needsUpdate = true;
+  }
+}
 function playOnce(k, onMid) {
   if (!wiz.ready) { onMid?.(); return; }
   if (wiz.oneShot) wiz.oneShot.action.stop();
@@ -1349,7 +1393,9 @@ addEventListener('keydown', e => {
 });
 addEventListener('keyup', e => { keys[e.code] = false; if (e.code === 'Tab') document.getElementById('goals').classList.remove('on'); });
 const cvs = renderer.domElement;
+if (house) chooseHouse(house);
 document.getElementById('start').addEventListener('click', () => {
+  if (!house) { const a = document.getElementById('houseAsk'); a.textContent = 'Önce bir bina seç!'; a.style.color = '#f5c76a'; return; }
   started = true; sfx.init(); const s = document.getElementById('start'); s.style.opacity = 0; setTimeout(() => s.remove(), 600);
   cvs.requestPointerLock?.();
 });
@@ -1978,7 +2024,7 @@ frame();
 fetch('version.json', { cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(v => {
   if (v) document.getElementById('ver').textContent = `sürüm ${v.sha.slice(0, 7)} · ${v.branch} · ${v.time}`;
 }).catch(() => {});
-window.__dbg = { prof, dlg, scene, camera, wiz, renderer, frame, doorState, setQuest, curtains, getDrag: () => curtainDrag, lights, interact, currentAction, grab, release, aimHit, aimItem, getHeld: () => held, fixSize: (w, h) => { camera.aspect = w / h; camera.updateProjectionMatrix(); renderer.setSize(w, h, false); composer.setSize(w, h); }, getYaw: () => yaw, setView: (y, p, d) => { yaw = y; pitch = p; dist = d; camPos.set(0, 0, 0); }, start: () => { started = true; document.getElementById('start')?.remove(); } };
+window.__dbg = { chooseHouse, prof, dlg, scene, camera, wiz, renderer, frame, doorState, setQuest, curtains, getDrag: () => curtainDrag, lights, interact, currentAction, grab, release, aimHit, aimItem, getHeld: () => held, fixSize: (w, h) => { camera.aspect = w / h; camera.updateProjectionMatrix(); renderer.setSize(w, h, false); composer.setSize(w, h); }, getYaw: () => yaw, setView: (y, p, d) => { yaw = y; pitch = p; dist = d; camPos.set(0, 0, 0); }, start: () => { started = true; document.getElementById('start')?.remove(); } };
 </script>
 </body>
 </html>
