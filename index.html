@@ -31,6 +31,9 @@
   #cross.hold::after{border-style:dashed;animation:spin 1.6s linear infinite}
   @keyframes spin{to{transform:rotate(360deg)}}
   #ver{position:fixed;right:12px;bottom:8px;font:600 11px Nunito,sans-serif;color:rgba(244,239,228,.45);pointer-events:none;text-shadow:0 1px 3px rgba(0,0,0,.6)}
+  #pts{font-family:Nunito,sans-serif;font-weight:800;font-size:17px;margin:8px 0 0 35px;transition:transform .25s;transform-origin:left center;text-shadow:0 1px 6px rgba(0,0,0,.6)}
+  #pts.pop{transform:scale(1.25)}
+  #pts small{font-weight:700;font-size:14px;opacity:.85;margin-left:8px;color:#f5c76a}
   #stars{font-family:Nunito,sans-serif;font-weight:700;font-size:17px;color:#ffd770;margin:8px 0 0 35px;text-shadow:0 0 8px rgba(255,200,80,.5)}
   #tscore{font-family:Nunito,sans-serif;font-weight:700;font-size:17px;color:#f5c76a;margin:10px 0 0 35px;opacity:0;transition:opacity .4s}
   #tscore.on{opacity:.95}
@@ -77,6 +80,7 @@
   <div id="sub">Masadaki asanı al</div>
   <div id="tscore">Hedefler: 0/3</div>
   <div id="stars">★ 0/10</div>
+  <div id="pts"></div>
 </div>
 <div id="goals"><h3>Bölüm hedefleri</h3></div>
 <div id="hint"><span class="key" id="hKey">Tab</span><span id="hText">Bölümün hedeflerini görmek için bas</span></div>
@@ -626,11 +630,24 @@ for (let i = 0; i < 8; i++) { const s = new THREE.Sprite(new THREE.SpriteMateria
 
 // the four houses (start-screen choice, robes, Great Hall banners)
 const HOUSES = {
-  aslan:  { name: 'Aslan',  hue: .995, sat: .78, l0: .18, a: '#7c1016', b: '#d5a03a' },
-  kartal: { name: 'Kartal', hue: .62,  sat: .7,  l0: .14, a: '#1b2f6b', b: '#b07a3a' },
-  porsuk: { name: 'Porsuk', hue: .13,  sat: .85, l0: .3,  a: '#d9a91c', b: '#1a1a1a' },
-  yilan:  { name: 'Yılan',  hue: .38,  sat: .65, l0: .1,  a: '#1a5c33', b: '#b8bcc0' },
+  aslan:  { name: 'Aslan',  hue: .995, sat: .78, l0: .18, a: '#7c1016', b: '#d5a03a', ui: '#ef5a50' },
+  kartal: { name: 'Kartal', hue: .62,  sat: .7,  l0: .14, a: '#1b2f6b', b: '#b07a3a', ui: '#7c9cf0' },
+  porsuk: { name: 'Porsuk', hue: .13,  sat: .85, l0: .3,  a: '#d9a91c', b: '#1a1a1a', ui: '#f2c838' },
+  yilan:  { name: 'Yılan',  hue: .38,  sat: .65, l0: .1,  a: '#1a5c33', b: '#b8bcc0', ui: '#56c884' },   // ui: readable on the dark HUD
 };
+// house points (stars 10, quests 25, finished practice 15), remembered in localStorage 'buyucu-puanlar'
+const POINTS = { star: 10, quest: 25, practice: 15 }, POINTS_GOAL = 500;
+const housePoints = { aslan: 0, kartal: 0, porsuk: 0, yilan: 0 };
+try { const v = JSON.parse(localStorage.getItem('buyucu-puanlar') || '{}'); for (const k in housePoints) if (Number.isFinite(v[k])) housePoints[k] = Math.max(0, v[k] | 0); } catch (e) {}
+const hallScoreBoards = {};   // filled by the Great Hall: canvas plaques under the banners
+function drawHallScore(k) {
+  const sb = hallScoreBoards[k]; if (!sb) return;
+  const { g, w, h } = sb, hs = HOUSES[k];
+  g.fillStyle = '#20140a'; g.fillRect(0, 0, w, h); g.strokeStyle = hs.b === '#1a1a1a' ? '#d9a91c' : hs.b; g.lineWidth = 6; g.strokeRect(5, 5, w - 10, h - 10);
+  g.fillStyle = '#f4e6c4'; g.font = '600 44px "Cormorant Garamond", Georgia, serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText(`${hs.name}: ${housePoints[k]}`, w / 2, h / 2 + 3);
+  sb.tex.needsUpdate = true;
+}
 
 // ---------------------------------------------------------------- the castle beyond the door
 // Door (E) -> shared corridor with torches and tall windows -> big arch -> open terrace above the clouds.
@@ -1118,6 +1135,13 @@ let hallCandles = null;
     const b = mesh(new THREE.PlaneGeometry(.9, 2.03), new THREE.MeshStandardMaterial({ map: bt, roughness: .85, side: THREE.DoubleSide }), x + dir * .02, 3.9, z);
     b.rotation.y = dir * Math.PI / 2; b.castShadow = false;
     const rod = mesh(new THREE.CylinderGeometry(.025, .025, 1.1, 8), gold, x + dir * .06, 4.93, z); rod.rotation.x = Math.PI / 2;
+    // points plaque under the banner
+    const cv = document.createElement('canvas'); cv.width = 320; cv.height = 96;
+    const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
+    hallScoreBoards[k] = { g: cv.getContext('2d'), w: cv.width, h: cv.height, tex }; drawHallScore(k);
+    mesh(new THREE.BoxGeometry(.04, .34, 1.0), woodDark, x + dir * .02, 2.55, z).castShadow = false;
+    const sp = mesh(new THREE.PlaneGeometry(.94, .28), new THREE.MeshStandardMaterial({ map: tex, roughness: .7, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: .25 }), x + dir * .045, 2.55, z);
+    sp.rotation.y = dir * Math.PI / 2; sp.castShadow = false;
   });
   // long tables with benches (long axis along z) + plates and goblets
   const plateGeo = new THREE.CylinderGeometry(.11, .09, .015, 16), gobGeo = new THREE.CylinderGeometry(.035, .02, .12, 10);
@@ -1334,7 +1358,7 @@ function hitDummy(pt, obj) {
     toast('✦ Talim tamamlandı! ✦<br><span style="font-size:22px;opacity:.85">Hedefler birazdan yeniden dikilecek</span>', 3600); sfx.fanfare();
     const c = wiz.root.position.clone().setY(1.2);
     for (let i = 0; i < 36; i++) { const a = Math.random() * 6.28; spark(c.clone(), new THREE.Vector3(Math.cos(a) * (.6 + Math.random()), 1 + Math.random() * 1.6, Math.sin(a) * (.6 + Math.random())), 1.2 + Math.random() * .8, .05, 0xffd070); }
-    practice.resetAt = clock.elapsedTime + 4.5;
+    practice.resetAt = clock.elapsedTime + 4.5; addPoints(POINTS.practice);
   }
 }
 function updatePractice(t, dt, p) {
@@ -2002,7 +2026,7 @@ function chooseHouse(k) {
   for (const b of document.querySelectorAll('#houses button')) b.classList.toggle('sel', b.dataset.k === k);
   document.getElementById('houseAsk').textContent = 'Binan: ' + HOUSES[k].name + ' (değiştirmek için başka birine tıkla)';
   document.getElementById('startTxt').style.visibility = 'visible';
-  applyHouse(); paintDorm();
+  applyHouse(); paintDorm(); updatePointsHud();
 }
 for (const [k, h] of Object.entries(HOUSES)) {
   const b = document.createElement('button'); b.dataset.k = k;
@@ -2294,7 +2318,7 @@ function showGoals(ms) {
 function completeQuest(id) {
   if (Q[quest].id !== id) return;
   const done = Q[quest];
-  setQuest(quest + 1); sfx.fanfare();
+  setQuest(quest + 1); sfx.fanfare(); addPoints(POINTS.quest);
   toast(`Görev tamamlandı!<br><span style="font-size:22px;opacity:.85">${done.title}</span>`, 2600);
   showGoals(4000);
   if (Q[quest].id === 'free') setTimeout(() => {
@@ -2808,6 +2832,24 @@ try { for (const k of JSON.parse(localStorage.getItem('buyucu-yildizlar') || '[]
     starState.meshes.push(g);
   });
 }
+function updatePointsHud(gain) {
+  const el = document.getElementById('pts'); if (!house) { el.textContent = ''; return; }
+  const hs = HOUSES[house];
+  el.style.color = hs.ui;
+  el.innerHTML = `${hs.name}: ${housePoints[house]}` + (gain ? `<small>+${gain}</small>` : '');
+  if (gain) { el.classList.add('pop'); clearTimeout(updatePointsHud.t); updatePointsHud.t = setTimeout(() => { el.classList.remove('pop'); updatePointsHud(); }, 1600); }
+}
+function addPoints(n) {
+  if (!house) return;
+  const before = housePoints[house]; housePoints[house] += n;
+  try { localStorage.setItem('buyucu-puanlar', JSON.stringify(housePoints)); } catch (e) {}
+  updatePointsHud(n); drawHallScore(house);
+  if (before < POINTS_GOAL && housePoints[house] >= POINTS_GOAL) setTimeout(() => {
+    toast(`✦ Binan ${POINTS_GOAL} puana ulaştı! ✦<br><span style="font-size:22px;opacity:.85">${HOUSES[house].name} gurur duyuyor</span>`, 5000); sfx.fanfare();
+    const c = wiz.root.position.clone().setY(1.2), col = new THREE.Color(HOUSES[house].ui).getHex();
+    for (let i = 0; i < 44; i++) { const a = Math.random() * 6.28; spark(c.clone(), new THREE.Vector3(Math.cos(a) * (.6 + Math.random()), 1 + Math.random() * 1.8, Math.sin(a) * (.6 + Math.random())), 1.2 + Math.random() * .9, .05, i % 2 ? col : 0xffd070); }
+  }, 2800);
+}
 function updateStarHud() { document.getElementById('stars').textContent = `★ ${starState.got.size}/${STARS.length}`; }
 updateStarHud();
 function nearStar() {
@@ -2819,7 +2861,7 @@ function collectStar(k) {
   const g = starState.meshes[k]; starState.got.add(k); g.visible = false;
   try { localStorage.setItem('buyucu-yildizlar', JSON.stringify([...starState.got])); } catch (e) {}
   for (let i = 0; i < 18; i++) spark(g.position, new THREE.Vector3().randomDirection().multiplyScalar(.9 + Math.random()), .5 + Math.random() * .4, .04, i % 2 ? 0xffd070 : 0xfff6d0);
-  sfx.star(g.position); updateStarHud();
+  sfx.star(g.position); updateStarHud(); addPoints(POINTS.star);
   if (starState.got.size < STARS.length) toast(`★ Yıldız toplandı! <span style="font-size:24px;opacity:.85">${starState.got.size}/${STARS.length}</span>`, 1500);
   else {
     toast('✦ Tüm yıldızları topladın! ✦<br><span style="font-size:22px;opacity:.85">Okulun her köşesini keşfettin</span>', 5000); sfx.fanfare();
@@ -3068,7 +3110,7 @@ renderer.compileAsync(scene, camera).catch(() => {}).then(() => {
 fetch('version.json', { cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(v => {
   if (v) document.getElementById('ver').textContent = `sürüm ${v.sha.slice(0, 7)} · ${v.branch} · ${v.time}` + (LITE ? ' · hafif mod' : '');
 }).catch(() => {});
-window.__dbg = { potDoor, CAULDRONS, sfx, toggleSound, owlDoor, OWL, owls, petOwl: () => petOwl, STARS, starState, collide: (x, z) => collide(x, z), walkable, classDoor, CLASS_BOARD_SPOT, dummies, practice, castSpell, giveWand: () => { hasWand = true; }, dormDoor, BED_SPOT, isResting: () => resting, hallDoor, completeQuest, getQuest: () => Q[quest].id, libDoor, LIB_BOOKS, npcs, STUDENTS, updateNPC, startIntro, LITE, chooseLook, look, chooseHouse, prof, dlg, scene, camera, wiz, renderer, frame, doorState, setQuest, curtains, getDrag: () => curtainDrag, lights, interact, currentAction, grab, release, aimHit, aimItem, getHeld: () => held, fixSize: (w, h) => { camera.aspect = w / h; camera.updateProjectionMatrix(); renderer.setSize(w, h, false); composer.setSize(w, h); }, getYaw: () => yaw, setView: (y, p, d) => { yaw = y; pitch = p; dist = d; camPos.set(0, 0, 0); }, start: () => { started = true; document.getElementById('start')?.remove(); } };
+window.__dbg = { housePoints, addPoints, potDoor, CAULDRONS, sfx, toggleSound, owlDoor, OWL, owls, petOwl: () => petOwl, STARS, starState, collide: (x, z) => collide(x, z), walkable, classDoor, CLASS_BOARD_SPOT, dummies, practice, castSpell, giveWand: () => { hasWand = true; }, dormDoor, BED_SPOT, isResting: () => resting, hallDoor, completeQuest, getQuest: () => Q[quest].id, libDoor, LIB_BOOKS, npcs, STUDENTS, updateNPC, startIntro, LITE, chooseLook, look, chooseHouse, prof, dlg, scene, camera, wiz, renderer, frame, doorState, setQuest, curtains, getDrag: () => curtainDrag, lights, interact, currentAction, grab, release, aimHit, aimItem, getHeld: () => held, fixSize: (w, h) => { camera.aspect = w / h; camera.updateProjectionMatrix(); renderer.setSize(w, h, false); composer.setSize(w, h); }, getYaw: () => yaw, setView: (y, p, d) => { yaw = y; pitch = p; dist = d; camPos.set(0, 0, 0); }, start: () => { started = true; document.getElementById('start')?.remove(); } };
 </script>
 </body>
 </html>
